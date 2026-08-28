@@ -258,6 +258,22 @@ export interface UsageStatus {
   allowed: boolean;
 }
 
+/**
+ * JSON-safe usage projection.
+ *
+ * `remaining` is `Infinity` for unlimited plans, which `JSON.stringify` turns
+ * into `null`. Over the wire it becomes `-1`, matching how limits are encoded.
+ */
+export function serializeUsage(status: UsageStatus): UsageStatus {
+  return {
+    used: status.used,
+    limit: status.limit,
+    remaining: status.unlimited ? -1 : status.remaining,
+    unlimited: status.unlimited,
+    allowed: status.allowed,
+  };
+}
+
 function toStatus(used: number, limit: number): UsageStatus {
   const unlimited = limit < 0;
   return {

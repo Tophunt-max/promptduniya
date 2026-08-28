@@ -1,10 +1,11 @@
-import { db, plans, subscriptions } from '@pd/db';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { db, plans, subscriptions, users } from '@pd/db';
+import { and, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 
 import { AppError } from '../lib/errors';
 import { addDays, nowSec } from '../lib/dates';
 import { newId } from '../lib/crypto';
 import { activatePremium, deactivatePremium } from './entitlements';
+import { notify } from './notifications';
 
 export interface SubscriptionView {
   id: string;
@@ -139,4 +140,81 @@ export async function expireDueSubscriptions(): Promise<number> {
     await deactivatePremium(sub.userId);
   }
   return due.length;
+}
+
+
+/**
+ * Notifies members whose non-renewing membership lapses within `days`.
+ * Driven by the scheduled worker.
+ */
+export async function remindExpiringSubscriptions(days = 5): Promise<number> {
+  const horizon = addDays(nowSec(), days);
+  const due = await db
+    .select({ userId: subscriptions.userId, endDate: subscriptions.endDate })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.status, 'active'),
+        eq(subscriptions.autoRenew, false),
+        gt(subscriptions.endDate, nowSec()),
+        lt(subscriptions.endDate, horizon),
+      ),
+    );
+
+  for (const sub of due) {
+    await notify({
+      userId: sub.userId,
+      type: 'subscription_expiring',
+      title: 'Your membership ends soon',
+      body: 'Renew now to keep unlimited access without a break.',
+      href: '/premium',
+    });
+  }
+
+  return due.length;
+}
+
+export async function adminListSubscriptions(options: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+}) {
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? 30;
+  const where = options.status ? eq(subscriptions.status, options.status) : undefined;
+
+  const [items, totals] = await Promise.all([
+    db
+      .select({
+        id: subscriptions.id,
+        userId: subscriptions.userId,
+        userEmail: users.email,
+        userName: users.name,
+        planName: plans.name,
+        planCode: plans.code,
+        status: subscriptions.status,
+        startDate: subscriptions.startDate,
+        endDate: subscriptions.endDate,
+        autoRenew: subscriptions.autoRenew,
+        createdAt: subscriptions.createdAt,
+      })
+      .from(subscriptions)
+      .innerJoin(plans, eq(plans.id, subscriptions.planId))
+      .leftJoin(users, eq(users.id, subscriptions.userId))
+      .where(where)
+      .orderBy(desc(subscriptions.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ value: count() }).from(subscriptions).where(where),
+  ]);
+
+  return { items, total: totals[0]?.value ?? 0, page, pageSize };
+}
+
+export async function activeSubscriberCount(): Promise<number> {
+  const rows = await db
+    .select({ value: count() })
+    .from(subscriptions)
+    .where(eq(subscriptions.status, 'active'));
+  return rows[0]?.value ?? 0;
 }

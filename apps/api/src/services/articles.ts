@@ -1,6 +1,6 @@
 import { articles, categories, db, users } from '@pd/db';
 import { readingMinutes, slugify } from '@pd/shared';
-import { and, count, desc, eq, like, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, like, ne, or, sql } from 'drizzle-orm';
 
 import { AppError } from '../lib/errors';
 import { newId } from '../lib/crypto';
@@ -70,6 +70,7 @@ export async function getArticleBySlug(slug: string) {
       keywords: articles.keywords,
       isPublished: articles.isPublished,
       updatedAt: articles.updatedAt,
+      categoryId: articles.categoryId,
     })
     .from(articles)
     .leftJoin(categories, eq(categories.id, articles.categoryId))
@@ -79,6 +80,28 @@ export async function getArticleBySlug(slug: string) {
   const row = rows[0];
   if (!row || !row.isPublished) return null;
   return row;
+}
+
+/** Same-category articles, excluding the one being read. */
+export async function relatedArticles(
+  slug: string,
+  categoryId: string | null,
+  limit = 3,
+): Promise<ArticleCard[]> {
+  return db
+    .select(cardColumns)
+    .from(articles)
+    .leftJoin(categories, eq(categories.id, articles.categoryId))
+    .leftJoin(users, eq(users.id, articles.authorId))
+    .where(
+      and(
+        eq(articles.isPublished, true),
+        ne(articles.slug, slug),
+        categoryId ? eq(articles.categoryId, categoryId) : undefined,
+      ),
+    )
+    .orderBy(desc(articles.publishedAt))
+    .limit(limit);
 }
 
 export async function allArticleSlugs(): Promise<{ slug: string; updatedAt: number }[]> {

@@ -35,6 +35,7 @@ export const RATE_LIMITS = {
   coupon: { name: 'coupon', limit: 20, windowSec: 3600 },
   contact: { name: 'contact', limit: 4, windowSec: 3600 },
   report: { name: 'report', limit: 10, windowSec: 3600 },
+  analytics: { name: 'analytics', limit: 240, windowSec: 60 },
   adminWrite: { name: 'admin:write', limit: 240, windowSec: 60 },
   adminRead: { name: 'admin:read', limit: 600, windowSec: 60 },
   webhook: { name: 'webhook', limit: 600, windowSec: 60 },

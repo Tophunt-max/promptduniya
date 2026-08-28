@@ -7,8 +7,14 @@ import { hasFeature } from '../services/entitlements';
 import {
   allPublishedSlugs,
   decorateViewer,
+  featuredPrompts,
   getPromptBySlug,
+  latestPrompts,
   listPrompts,
+  premiumShowcase,
+  recordView,
+  relatedPrompts,
+  trendingPrompts,
 } from '../services/prompts';
 import { copyPrompt, toggleFavorite, toggleLike } from '../services/engagement';
 
@@ -44,6 +50,59 @@ promptsRoute.get('/', async (c) => {
 promptsRoute.get('/sitemap', async (c) => {
   const slugs = await allPublishedSlugs();
   return c.json({ ok: true, data: { slugs } });
+});
+
+/**
+ * Home-page rails in a single round trip. Fetching these together keeps the
+ * SSR render to one API call instead of four.
+ */
+promptsRoute.get('/collections', async (c) => {
+  const params = new URL(c.req.url).searchParams;
+  const size = (key: string, fallback: number) => {
+    const value = Number(params.get(key));
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 40) : fallback;
+  };
+  const viewerId = c.get('access').userId;
+
+  const [trending, latest, featured, premium] = await Promise.all([
+    trendingPrompts(size('trending', 8), viewerId),
+    latestPrompts(size('latest', 8), viewerId),
+    featuredPrompts(size('featured', 6), viewerId),
+    premiumShowcase(size('premium', 4), viewerId),
+  ]);
+
+  return c.json({ ok: true, data: { trending, latest, featured, premium } });
+});
+
+/** Recommendation rails for a detail page. */
+promptsRoute.get('/:slug/related', async (c) => {
+  const access = c.get('access');
+  const prompt = await getPromptBySlug(c.req.param('slug'), { viewerId: access.userId });
+  if (!prompt) throw AppError.notFound('Prompt not found');
+  const groups = await relatedPrompts(
+    {
+      id: prompt.id,
+      categorySlug: prompt.categorySlug,
+      aiModel: prompt.aiModel,
+      style: prompt.style,
+    },
+    access.userId,
+  );
+  return c.json({ ok: true, data: groups });
+});
+
+/** View counter. De-duplicated per visitor per day inside the service. */
+promptsRoute.post('/view', async (c) => {
+  await limit(c, 'view');
+  const body = promptIdSchema.parse(await c.req.json());
+  const access = c.get('access');
+  await recordView({
+    promptId: body.promptId,
+    userId: access.userId,
+    visitorHash: c.get('visitorHash'),
+    referrer: c.req.header('referer') ?? null,
+  });
+  return c.json({ ok: true, data: { recorded: true } });
 });
 
 promptsRoute.get('/:slug', async (c) => {

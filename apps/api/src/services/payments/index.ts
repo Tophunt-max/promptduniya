@@ -1,4 +1,4 @@
-import { db, paymentEvents, payments, subscriptions, transactions } from '@pd/db';
+import { db, paymentEvents, payments, subscriptions, transactions, users } from '@pd/db';
 import { SETTING_KEYS } from '@pd/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
@@ -436,3 +436,60 @@ export async function listUserPayments(userId: string, limit = 30) {
 }
 
 export { paymentProvider } from './provider';
+
+
+/* ============================ Admin reads ============================== */
+
+export async function adminListPayments(options: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+}) {
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? 30;
+  const where = options.status ? eq(payments.status, options.status) : undefined;
+
+  const [items, totals] = await Promise.all([
+    db
+      .select({
+        id: payments.id,
+        userId: payments.userId,
+        userEmail: users.email,
+        userName: users.name,
+        amountMinor: payments.amountMinor,
+        currency: payments.currency,
+        status: payments.status,
+        method: payments.paymentMethod,
+        providerOrderId: payments.providerOrderId,
+        providerPaymentId: payments.providerPaymentId,
+        receiptId: payments.receiptId,
+        createdAt: payments.createdAt,
+      })
+      .from(payments)
+      .leftJoin(users, eq(users.id, payments.userId))
+      .where(where)
+      .orderBy(desc(payments.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ value: sql<number>`count(*)` }).from(payments).where(where),
+  ]);
+
+  return { items, total: Number(totals[0]?.value ?? 0), page, pageSize };
+}
+
+/** Raw provider webhook log — the audit trail for billing disputes. */
+export async function adminListPaymentEvents(limit = 50) {
+  return db
+    .select({
+      id: paymentEvents.id,
+      eventType: paymentEvents.eventType,
+      eventKey: paymentEvents.eventKey,
+      signatureValid: paymentEvents.signatureValid,
+      processedAt: paymentEvents.processedAt,
+      processingError: paymentEvents.processingError,
+      createdAt: paymentEvents.createdAt,
+    })
+    .from(paymentEvents)
+    .orderBy(desc(paymentEvents.createdAt))
+    .limit(limit);
+}

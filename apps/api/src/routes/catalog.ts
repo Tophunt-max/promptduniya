@@ -1,10 +1,33 @@
 import { Hono } from 'hono';
 
-import { contactSchema, reportSchema, searchQuerySchema, suggestQuerySchema } from '@pd/shared';
+import {
+  analyticsEventSchema,
+  contactSchema,
+  reportSchema,
+  searchQuerySchema,
+  suggestQuerySchema,
+} from '@pd/shared';
+import { trackEvent, trackPageView } from '../services/analytics';
 import { clientIp, limit, withAccess, type Vars } from '../middleware';
 import { createReport, saveContactMessage } from '../services/admin';
+import {
+  allArticleSlugs,
+  getArticleBySlug,
+  incrementArticleViews,
+  listArticles,
+  relatedArticles,
+} from '../services/articles';
+import { getBrand, getPublicSettings } from '../services/settings';
 import { allCategorySlugs, featuredCategories, getCategoryBySlug, listCategories, popularTags } from '../services/categories';
-import { searchPrompts, suggest } from '../services/search';
+import {
+  noResultAlternatives,
+  normalizeQuery,
+  popularSearches,
+  recentSearchesForUser,
+  searchPrompts,
+  suggest,
+  trackSearch,
+} from '../services/search';
 import { decorateViewer } from '../services/prompts';
 import { listPlans } from '../services/plans';
 
@@ -37,9 +60,42 @@ catalog.get('/search', async (c) => {
   const params = Object.fromEntries(new URL(c.req.url).searchParams);
   const { q, page } = searchQuerySchema.parse(params);
   const access = c.get('access');
-  const result = await searchPrompts({ query: q, page, category: params.category, model: params.model });
+  const result = await searchPrompts({
+    query: q,
+    page,
+    category: params.category,
+    model: params.model,
+  });
   const items = await decorateViewer(result.items, access.userId);
+
+  // Record the query so the popular/recent lists stay useful. Opt-out via
+  // ?track=0 for prefetches and internal calls.
+  if (params.track !== '0' && q.trim()) {
+    await trackSearch({
+      query: q,
+      normalized: normalizeQuery(q),
+      resultCount: result.total,
+      userId: access.userId,
+      visitorHash: c.get('visitorHash'),
+    });
+  }
+
   return c.json({ ok: true, data: { ...result, items, query: q } });
+});
+
+/** Popular terms, the viewer's recent searches, and empty-state fallbacks. */
+catalog.get('/search/discovery', async (c) => {
+  const params = new URL(c.req.url).searchParams;
+  const access = c.get('access');
+  const emptyFor = params.get('q') ?? '';
+
+  const [popular, recent, alternatives] = await Promise.all([
+    popularSearches(Number(params.get('limit')) || 8),
+    access.userId ? recentSearchesForUser(access.userId, 6) : Promise.resolve([]),
+    emptyFor ? noResultAlternatives(emptyFor, 6) : Promise.resolve([]),
+  ]);
+
+  return c.json({ ok: true, data: { popular, recent, alternatives } });
 });
 
 catalog.get('/search/suggest', async (c) => {
@@ -50,6 +106,70 @@ catalog.get('/search/suggest', async (c) => {
 
 catalog.get('/plans', async (c) => {
   return c.json({ ok: true, data: { items: await listPlans({ activeOnly: true }) } });
+});
+
+/* ------------------------------ Branding -------------------------------- */
+
+/** Site identity + public settings, used by the website's layout and metadata. */
+catalog.get('/brand', async (c) => {
+  const [brand, settings] = await Promise.all([getBrand(), getPublicSettings()]);
+  return c.json({ ok: true, data: { brand, settings } });
+});
+
+/* ------------------------------ Articles -------------------------------- */
+
+catalog.get('/articles', async (c) => {
+  const p = new URL(c.req.url).searchParams;
+  const result = await listArticles({
+    page: Number(p.get('page')) || undefined,
+    pageSize: Number(p.get('pageSize')) || undefined,
+  });
+  return c.json({ ok: true, data: result });
+});
+
+catalog.get('/articles/slugs', async (c) => {
+  return c.json({ ok: true, data: { slugs: await allArticleSlugs() } });
+});
+
+catalog.get('/articles/:slug', async (c) => {
+  const article = await getArticleBySlug(c.req.param('slug'));
+  if (!article) {
+    return c.json({ ok: false, error: { code: 'not_found', message: 'Article not found' } }, 404);
+  }
+  const related = await relatedArticles(article.slug, article.categoryId, 3);
+  return c.json({ ok: true, data: { ...article, related } });
+});
+
+/** View counter for an article. Fire-and-forget from the client. */
+catalog.post('/articles/:id/view', async (c) => {
+  await limit(c, 'view');
+  await incrementArticleViews(c.req.param('id'));
+  return c.json({ ok: true, data: { recorded: true } });
+});
+
+/* ------------------------------ Analytics ------------------------------- */
+
+/**
+ * First-party page-view / event beacon. Pseudonymous only: the visitor hash is
+ * derived server-side from a keyed hash of IP + user agent, never stored raw.
+ */
+catalog.post('/events', async (c) => {
+  await limit(c, 'analytics');
+  const body = analyticsEventSchema.parse(await c.req.json());
+  const access = c.get('access');
+  const visitorHash = c.get('visitorHash');
+
+  if (body.path) {
+    await trackPageView({
+      path: body.path,
+      userId: access.userId,
+      visitorHash,
+      referrer: c.req.header('referer') ?? null,
+    });
+  }
+  await trackEvent({ name: body.name, userId: access.userId, visitorHash, props: body.props });
+
+  return c.json({ ok: true, data: { recorded: true } });
 });
 
 /* ------------------------- Public submissions --------------------------- */

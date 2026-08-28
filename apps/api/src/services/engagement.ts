@@ -1,6 +1,6 @@
-import { db, favorites, likes, promptCopies, prompts } from '@pd/db';
+import { categories, db, favorites, likes, promptCopies, prompts } from '@pd/db';
 import { FEATURES } from '@pd/shared';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 
 import { AppError } from '../lib/errors';
 import { dayBucket } from '../lib/dates';
@@ -177,4 +177,177 @@ export async function toggleFavorite(access: AccessContext, promptId: string) {
 
   const usage = await favoriteUsage(access);
   return { saved: existing.length === 0, usage };
+}
+
+
+/* ======================== Library listings =========================== */
+
+export type FavoriteSort = 'recent' | 'oldest' | 'title' | 'most-copied';
+
+export interface FavoriteRow {
+  id: string;
+  title: string;
+  slug: string;
+  shortDescription: string;
+  aiModel: string;
+  categoryName: string;
+  categorySlug: string;
+  coverImageUrl: string | null;
+  coverImageAlt: string | null;
+  isPremium: boolean;
+  isTrending: boolean;
+  difficulty: string;
+  style: string | null;
+  aspectRatio: string | null;
+  gender: string | null;
+  isFeatured: boolean;
+  isEditorsPick: boolean;
+  viewCount: number;
+  copyCount: number;
+  likeCount: number;
+  favoriteCount: number;
+  publishedAt: number | null;
+  createdAt: number;
+  savedAt: number;
+  collectionName: string | null;
+  note: string | null;
+}
+
+export async function listFavorites(
+  userId: string,
+  options: { sort?: FavoriteSort; q?: string; model?: string; access?: string; limit?: number } = {},
+): Promise<FavoriteRow[]> {
+  const filters = [eq(favorites.userId, userId)];
+  if (options.model) filters.push(eq(prompts.aiModel, options.model));
+  if (options.access === 'free') filters.push(eq(prompts.isPremium, false));
+  if (options.access === 'premium') filters.push(eq(prompts.isPremium, true));
+  if (options.q) {
+    filters.push(sql`lower(${prompts.title}) like ${`%${options.q.toLowerCase()}%`}`);
+  }
+
+  const order = (() => {
+    switch (options.sort) {
+      case 'oldest':
+        return favorites.createdAt;
+      case 'title':
+        return prompts.title;
+      case 'most-copied':
+        return desc(prompts.copyCount);
+      default:
+        return desc(favorites.createdAt);
+    }
+  })();
+
+  return db
+    .select({
+      id: prompts.id,
+      title: prompts.title,
+      slug: prompts.slug,
+      shortDescription: prompts.shortDescription,
+      aiModel: prompts.aiModel,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+      coverImageUrl: prompts.coverImageUrl,
+      coverImageAlt: prompts.coverImageAlt,
+      isPremium: prompts.isPremium,
+      isTrending: prompts.isTrending,
+      difficulty: prompts.difficulty,
+      style: prompts.style,
+      aspectRatio: prompts.aspectRatio,
+      gender: prompts.gender,
+      isFeatured: prompts.isFeatured,
+      isEditorsPick: prompts.isEditorsPick,
+      viewCount: prompts.viewCount,
+      copyCount: prompts.copyCount,
+      likeCount: prompts.likeCount,
+      favoriteCount: prompts.favoriteCount,
+      publishedAt: prompts.publishedAt,
+      createdAt: prompts.createdAt,
+      savedAt: favorites.createdAt,
+      collectionName: favorites.collectionName,
+      note: favorites.note,
+    })
+    .from(favorites)
+    .innerJoin(prompts, eq(prompts.id, favorites.promptId))
+    .innerJoin(categories, eq(categories.id, prompts.categoryId))
+    .where(and(...filters))
+    .orderBy(order)
+    .limit(options.limit ?? 200);
+}
+
+export async function removeFavorite(userId: string, promptId: string): Promise<void> {
+  const existing = await db
+    .select({ promptId: favorites.promptId })
+    .from(favorites)
+    .where(and(eq(favorites.userId, userId), eq(favorites.promptId, promptId)))
+    .limit(1);
+  if (existing.length === 0) return;
+
+  await db
+    .delete(favorites)
+    .where(and(eq(favorites.userId, userId), eq(favorites.promptId, promptId)));
+  await db
+    .update(prompts)
+    .set({ favoriteCount: sql`max(0, ${prompts.favoriteCount} - 1)` })
+    .where(eq(prompts.id, promptId));
+}
+
+export async function listLikedPrompts(userId: string, limit = 60) {
+  return db
+    .select({
+      id: prompts.id,
+      title: prompts.title,
+      slug: prompts.slug,
+      shortDescription: prompts.shortDescription,
+      aiModel: prompts.aiModel,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+      coverImageUrl: prompts.coverImageUrl,
+      coverImageAlt: prompts.coverImageAlt,
+      isPremium: prompts.isPremium,
+      likeCount: prompts.likeCount,
+      copyCount: prompts.copyCount,
+      viewCount: prompts.viewCount,
+      likedAt: likes.createdAt,
+    })
+    .from(likes)
+    .innerJoin(prompts, eq(prompts.id, likes.promptId))
+    .innerJoin(categories, eq(categories.id, prompts.categoryId))
+    .where(eq(likes.userId, userId))
+    .orderBy(desc(likes.createdAt))
+    .limit(limit);
+}
+
+export async function userEngagementStats(userId: string) {
+  const single = async (q: Promise<{ value: number }[]>) => Number((await q)[0]?.value ?? 0);
+
+  const [copies, saves, likesCount, copiesToday] = await Promise.all([
+    single(db.select({ value: count() }).from(promptCopies).where(eq(promptCopies.userId, userId))),
+    single(db.select({ value: count() }).from(favorites).where(eq(favorites.userId, userId))),
+    single(db.select({ value: count() }).from(likes).where(eq(likes.userId, userId))),
+    single(
+      db
+        .select({ value: count() })
+        .from(promptCopies)
+        .where(and(eq(promptCopies.userId, userId), eq(promptCopies.dayBucket, dayBucket()))),
+    ),
+  ]);
+
+  return { copies, saves, likes: likesCount, copiesToday };
+}
+
+export async function recentCopyActivity(userId: string, limit = 10) {
+  return db
+    .select({
+      promptId: promptCopies.promptId,
+      title: prompts.title,
+      slug: prompts.slug,
+      variant: promptCopies.variant,
+      createdAt: promptCopies.createdAt,
+    })
+    .from(promptCopies)
+    .innerJoin(prompts, eq(prompts.id, promptCopies.promptId))
+    .where(eq(promptCopies.userId, userId))
+    .orderBy(desc(promptCopies.createdAt))
+    .limit(limit);
 }

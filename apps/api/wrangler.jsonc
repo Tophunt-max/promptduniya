@@ -29,6 +29,12 @@
     { "binding": "MEDIA", "bucket_name": "promptduniya-media" }
   ],
 
+  // ---- Nightly maintenance (publish scheduled, trending, expiries) ----
+  // 19:30 UTC == 01:00 IST, the platform's quiet hour.
+  "triggers": {
+    "crons": ["30 19 * * *"]
+  },
+
   // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----
   "vars": {
     "ENVIRONMENT": "production",
@@ -38,10 +44,11 @@
     "PAYMENTS_CURRENCY": "INR",
     "AI_PROVIDER": "template",
     "EMAIL_PROVIDER": "console",
+    "EMAIL_FROM": "promptduniya <no-reply@promptduniya.in>",
     "R2_PUBLIC_URL": "https://media.promptduniya.in"
   }
 
   // Secrets to set with `wrangler secret put <NAME>`:
   //   AUTH_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
-  //   RAZORPAY_WEBHOOK_SECRET, AI_API_KEY, RESEND_API_KEY
+  //   RAZORPAY_WEBHOOK_SECRET, AI_API_KEY, RESEND_API_KEY, CRON_SECRET
 }

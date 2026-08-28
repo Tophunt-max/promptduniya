@@ -58,13 +58,21 @@ import {
   setContactMessageStatus,
 } from '../services/admin';
 import {
-  pageViewSeries,
+  dailyGeneratorUsage,
+  dailyPremiumConversions,
+  dailyPromptCopies,
+  dailyPromptViews,
+  dailyRevenue,
+  dailySignups,
+  dailyVisitors,
   platformStats,
-  revenueSeries,
-  signupSeries,
-  topSearchQueries,
+  topCategories,
+  topPrompts,
+  topSearches,
 } from '../services/analytics';
 import { getSettings, setSettings, type SettingValue } from '../services/settings';
+import { adminListSubscriptions } from '../services/subscriptions';
+import { adminListPaymentEvents, adminListPayments } from '../services/payments';
 
 /**
  * Admin API. Content routes require an editor; billing, users and settings
@@ -398,16 +406,78 @@ admin.get('/stats', async (c) => {
   return c.json({ ok: true, data: await platformStats() });
 });
 
+/** Every dashboard chart and leaderboard in one call. */
 admin.get('/stats/series', async (c) => {
   requireEditor(c);
   const days = qNum(c, 'days') ?? 30;
-  const [pageViews, signups, revenue, searches] = await Promise.all([
-    pageViewSeries(days),
-    signupSeries(days),
-    revenueSeries(days),
-    topSearchQueries(20),
+  const [
+    visitors,
+    promptViews,
+    promptCopies,
+    generatorUsage,
+    signups,
+    revenue,
+    conversions,
+    prompts,
+    searches,
+    categories,
+  ] = await Promise.all([
+    dailyVisitors(days),
+    dailyPromptViews(days),
+    dailyPromptCopies(days),
+    dailyGeneratorUsage(days),
+    dailySignups(days),
+    dailyRevenue(days),
+    dailyPremiumConversions(days),
+    topPrompts(10),
+    topSearches(10, days),
+    topCategories(8),
   ]);
-  return c.json({ ok: true, data: { pageViews, signups, revenue, searches } });
+  return c.json({
+    ok: true,
+    data: {
+      visitors,
+      promptViews,
+      promptCopies,
+      generatorUsage,
+      signups,
+      revenue,
+      conversions,
+      topPrompts: prompts,
+      topSearches: searches,
+      topCategories: categories,
+    },
+  });
+});
+
+/* --------------------------- Billing records ---------------------------- */
+
+admin.get('/subscriptions', async (c) => {
+  requireAdmin(c);
+  const status = new URL(c.req.url).searchParams.get('status') ?? undefined;
+  const result = await adminListSubscriptions({
+    status,
+    page: qNum(c, 'page'),
+    pageSize: qNum(c, 'pageSize'),
+  });
+  return c.json({ ok: true, data: result });
+});
+
+admin.get('/payments', async (c) => {
+  requireAdmin(c);
+  const status = new URL(c.req.url).searchParams.get('status') ?? undefined;
+  const result = await adminListPayments({
+    status,
+    page: qNum(c, 'page'),
+    pageSize: qNum(c, 'pageSize'),
+  });
+  return c.json({ ok: true, data: result });
+});
+
+admin.get('/payments/events', async (c) => {
+  requireAdmin(c);
+  const items = await adminListPaymentEvents(qNum(c, 'limit') ?? 50);
+  return c.json({ ok: true, data: { items } });
 });
 
 admin.get('/logs', async (c) => {

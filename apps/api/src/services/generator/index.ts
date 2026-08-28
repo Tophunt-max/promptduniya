@@ -157,3 +157,41 @@ export async function listGenerated(userId: string, options: { savedOnly?: boole
 
 export { resolveEngine, aiConfigured } from './ai-engine';
 export type { GeneratedResult } from './types';
+
+
+export async function unsaveGenerated(userId: string, generatedId: string): Promise<void> {
+  await db
+    .update(generatedPrompts)
+    .set({ isSaved: false })
+    .where(and(eq(generatedPrompts.id, generatedId), eq(generatedPrompts.userId, userId)));
+}
+
+export async function deleteGenerated(userId: string, generatedId: string): Promise<void> {
+  await db
+    .delete(generatedPrompts)
+    .where(and(eq(generatedPrompts.id, generatedId), eq(generatedPrompts.userId, userId)));
+}
+
+/** Lifetime and today's generator counts for the dashboard. */
+export async function generatorStats(userId: string) {
+  const rows = await db
+    .select({
+      id: generatedPrompts.id,
+      isSaved: generatedPrompts.isSaved,
+      day: generatedPrompts.dayBucket,
+      createdAt: generatedPrompts.createdAt,
+    })
+    .from(generatedPrompts)
+    .where(eq(generatedPrompts.userId, userId));
+
+  const today = dayBucket();
+  return {
+    total: rows.length,
+    saved: rows.filter((r) => r.isSaved).length,
+    today: rows.filter((r) => r.day === today).length,
+    lastRunAt: rows.reduce<number | null>(
+      (latest, row) => (latest === null || row.createdAt > latest ? row.createdAt : latest),
+      null,
+    ),
+  };
+}

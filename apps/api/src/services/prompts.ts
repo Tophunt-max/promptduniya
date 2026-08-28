@@ -1,10 +1,21 @@
-import { categories, db, favorites, likes, promptImages, promptTags, prompts, tags, users } from '@pd/db';
+import {
+  categories,
+  db,
+  favorites,
+  likes,
+  promptImages,
+  promptTags,
+  promptViews,
+  prompts,
+  tags,
+  users,
+} from '@pd/db';
 import { PAGE_SIZE, slugify, type PromptWriteInput, type SortOption } from '@pd/shared';
-import { and, count, desc, eq, inArray, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, like, ne, or, sql, type SQL } from 'drizzle-orm';
 
 import { AppError } from '../lib/errors';
 import { newId } from '../lib/crypto';
-import { nowSec } from '../lib/dates';
+import { dayBucket, nowSec } from '../lib/dates';
 
 /**
  * Prompt reads for the API. Public listings only ever expose published prompts,
@@ -22,15 +33,22 @@ export interface PromptCard {
   categorySlug: string;
   style: string | null;
   aspectRatio: string | null;
+  gender: string | null;
+  difficulty: string;
   isPremium: boolean;
   isTrending: boolean;
   isFeatured: boolean;
+  isEditorsPick: boolean;
   coverImageUrl: string | null;
   coverImageAlt: string | null;
   viewCount: number;
   copyCount: number;
   likeCount: number;
+  favoriteCount: number;
+  publishedAt: number | null;
   createdAt: number;
+  likedByMe?: boolean;
+  savedByMe?: boolean;
 }
 
 const cardColumns = {
@@ -43,14 +61,19 @@ const cardColumns = {
   categorySlug: categories.slug,
   style: prompts.style,
   aspectRatio: prompts.aspectRatio,
+  gender: prompts.gender,
+  difficulty: prompts.difficulty,
   isPremium: prompts.isPremium,
   isTrending: prompts.isTrending,
   isFeatured: prompts.isFeatured,
+  isEditorsPick: prompts.isEditorsPick,
   coverImageUrl: prompts.coverImageUrl,
   coverImageAlt: prompts.coverImageAlt,
   viewCount: prompts.viewCount,
   copyCount: prompts.copyCount,
   likeCount: prompts.likeCount,
+  favoriteCount: prompts.favoriteCount,
+  publishedAt: prompts.publishedAt,
   createdAt: prompts.createdAt,
 };
 
@@ -152,16 +175,22 @@ export interface PromptDetail extends PromptCard {
   cameraStyle: string | null;
   lighting: string | null;
   mood: string | null;
-  gender: string | null;
   ageGroup: string | null;
-  difficulty: string;
   seoTitle: string | null;
   seoDescription: string | null;
   updatedAt: number;
-  publishedAt: number | null;
   authorName: string | null;
+  authorUsername: string | null;
   tags: { name: string; slug: string }[];
-  images: { id: string; url: string; alt: string | null }[];
+  images: {
+    id: string;
+    url: string;
+    thumbnailUrl: string | null;
+    alt: string | null;
+    width: number | null;
+    height: number | null;
+  }[];
+  /** True when the body was withheld because the viewer lacks entitlement. */
   locked: boolean;
   likedByMe: boolean;
   savedByMe: boolean;
@@ -169,7 +198,7 @@ export interface PromptDetail extends PromptCard {
 
 export async function getPromptBySlug(
   slug: string,
-  options: { viewerId?: string | null; canSeePremium?: boolean } = {},
+  options: { viewerId?: string | null; canSeePremium?: boolean; allowUnpublished?: boolean } = {},
 ): Promise<PromptDetail | null> {
   const rows = await db
     .select({
@@ -181,15 +210,13 @@ export async function getPromptBySlug(
       cameraStyle: prompts.cameraStyle,
       lighting: prompts.lighting,
       mood: prompts.mood,
-      gender: prompts.gender,
       ageGroup: prompts.ageGroup,
-      difficulty: prompts.difficulty,
       seoTitle: prompts.seoTitle,
       seoDescription: prompts.seoDescription,
       updatedAt: prompts.updatedAt,
-      publishedAt: prompts.publishedAt,
       isPublished: prompts.isPublished,
       authorName: users.name,
+      authorUsername: users.username,
     })
     .from(prompts)
     .innerJoin(categories, eq(categories.id, prompts.categoryId))
@@ -198,7 +225,7 @@ export async function getPromptBySlug(
     .limit(1);
 
   const row = rows[0];
-  if (!row || !row.isPublished) return null;
+  if (!row || (!row.isPublished && !options.allowUnpublished)) return null;
 
   const [tagRows, imageRows] = await Promise.all([
     db
@@ -207,9 +234,17 @@ export async function getPromptBySlug(
       .innerJoin(tags, eq(tags.id, promptTags.tagId))
       .where(eq(promptTags.promptId, row.id)),
     db
-      .select({ id: promptImages.id, url: promptImages.url, alt: promptImages.alt })
+      .select({
+        id: promptImages.id,
+        url: promptImages.url,
+        thumbnailUrl: promptImages.thumbnailUrl,
+        alt: promptImages.alt,
+        width: promptImages.width,
+        height: promptImages.height,
+      })
       .from(promptImages)
-      .where(eq(promptImages.promptId, row.id)),
+      .where(eq(promptImages.promptId, row.id))
+      .orderBy(promptImages.sortOrder),
   ]);
 
   let likedByMe = false;
@@ -242,14 +277,12 @@ export async function getPromptBySlug(
     cameraStyle: row.cameraStyle,
     lighting: row.lighting,
     mood: row.mood,
-    gender: row.gender,
     ageGroup: row.ageGroup,
-    difficulty: row.difficulty,
     seoTitle: row.seoTitle,
     seoDescription: row.seoDescription,
     updatedAt: row.updatedAt,
-    publishedAt: row.publishedAt,
     authorName: row.authorName,
+    authorUsername: row.authorUsername,
     tags: tagRows,
     images: imageRows,
     locked,
@@ -278,8 +311,11 @@ export async function incrementCopyCount(promptId: string): Promise<void> {
     .where(eq(prompts.id, promptId));
 }
 
-export async function trendingPrompts(limit = 8): Promise<PromptCard[]> {
-  return (await listPrompts({ sort: 'trending', pageSize: limit })).items;
+export async function trendingPrompts(
+  limit = 8,
+  viewerId: string | null = null,
+): Promise<PromptCard[]> {
+  return collection([], orderFor('trending'), limit, viewerId);
 }
 
 export async function decorateViewer(cards: PromptCard[], viewerId: string | null): Promise<(PromptCard & { likedByMe?: boolean; savedByMe?: boolean })[]> {
@@ -582,4 +618,180 @@ async function refreshCategoryCount(categoryId: string): Promise<void> {
     .update(categories)
     .set({ promptCount: row?.value ?? 0 })
     .where(eq(categories.id, categoryId));
+}
+
+
+/* ======================== Curated collections ========================== */
+
+async function collection(
+  extra: SQL[],
+  order: ReturnType<typeof orderFor>,
+  limit: number,
+  viewerId: string | null,
+): Promise<PromptCard[]> {
+  const rows = await db
+    .select(cardColumns)
+    .from(prompts)
+    .innerJoin(categories, eq(categories.id, prompts.categoryId))
+    .where(and(publishedFilter(), ...extra))
+    .orderBy(...order)
+    .limit(limit);
+  return decorateViewer(rows, viewerId);
+}
+
+export async function latestPrompts(limit = 8, viewerId: string | null = null) {
+  return collection([], orderFor('newest'), limit, viewerId);
+}
+
+export async function featuredPrompts(limit = 6, viewerId: string | null = null) {
+  return collection([eq(prompts.isFeatured, true)], orderFor('trending'), limit, viewerId);
+}
+
+export async function premiumShowcase(limit = 4, viewerId: string | null = null) {
+  return collection([eq(prompts.isPremium, true)], orderFor('trending'), limit, viewerId);
+}
+
+export interface RelatedGroups {
+  related: PromptCard[];
+  sameCategory: PromptCard[];
+  sameModel: PromptCard[];
+  trending: PromptCard[];
+}
+
+/** Four recommendation rails for a prompt detail page, in one round trip. */
+export async function relatedPrompts(
+  prompt: { id: string; categorySlug: string; aiModel: string; style: string | null },
+  viewerId: string | null = null,
+): Promise<RelatedGroups> {
+  const exclude = ne(prompts.id, prompt.id);
+  const order = [desc(prompts.trendingScore), desc(prompts.viewCount)];
+
+  const fetchGroup = async (extra: SQL[], limit: number) => {
+    const rows = await db
+      .select(cardColumns)
+      .from(prompts)
+      .innerJoin(categories, eq(categories.id, prompts.categoryId))
+      .where(and(publishedFilter(), exclude, ...extra))
+      .orderBy(...order)
+      .limit(limit);
+    return decorateViewer(rows, viewerId);
+  };
+
+  const [sameCategory, sameModel, trending] = await Promise.all([
+    fetchGroup([eq(categories.slug, prompt.categorySlug)], 8),
+    fetchGroup([eq(prompts.aiModel, prompt.aiModel)], 8),
+    fetchGroup([eq(prompts.isTrending, true)], 8),
+  ]);
+
+  // "Related" blends category + style for tighter relevance.
+  const related = prompt.style
+    ? await fetchGroup([eq(prompts.style, prompt.style)], 4)
+    : sameCategory.slice(0, 4);
+
+  return { related, sameCategory, sameModel, trending };
+}
+
+/* ============================== Counters =============================== */
+
+/** Records a view, de-duplicated per visitor per day. */
+export async function recordView(input: {
+  promptId: string;
+  userId?: string | null;
+  visitorHash?: string | null;
+  referrer?: string | null;
+}): Promise<void> {
+  const today = dayBucket();
+
+  if (input.visitorHash) {
+    const seen = await db
+      .select({ id: promptViews.id })
+      .from(promptViews)
+      .where(
+        and(
+          eq(promptViews.promptId, input.promptId),
+          eq(promptViews.visitorHash, input.visitorHash),
+          eq(promptViews.dayBucket, today),
+        ),
+      )
+      .limit(1);
+    if (seen.length > 0) return;
+  }
+
+  await db.insert(promptViews).values({
+    id: newId(),
+    promptId: input.promptId,
+    userId: input.userId ?? null,
+    visitorHash: input.visitorHash ?? null,
+    referrer: input.referrer?.slice(0, 300) ?? null,
+    dayBucket: today,
+  });
+
+  await db
+    .update(prompts)
+    .set({ viewCount: sql`${prompts.viewCount} + 1` })
+    .where(eq(prompts.id, input.promptId));
+}
+
+/**
+ * Recomputes the rolling popularity score and re-picks the trending set.
+ * Run from the scheduled worker, never from a user request.
+ */
+export async function recomputeTrending(): Promise<number> {
+  const ageDays = sql`max(1.0, (${nowSec()} - coalesce(${prompts.publishedAt}, ${prompts.createdAt})) / 86400.0)`;
+  const score = sql`
+    ((${prompts.viewCount} * 1.0) + (${prompts.copyCount} * 4.0) +
+     (${prompts.likeCount} * 3.0) + (${prompts.favoriteCount} * 5.0))
+    / (${ageDays} + 2.0)
+  `;
+
+  await db.update(prompts).set({ trendingScore: score as unknown as number });
+
+  const top = await db
+    .select({ id: prompts.id })
+    .from(prompts)
+    .where(publishedFilter())
+    .orderBy(desc(prompts.trendingScore))
+    .limit(12);
+
+  const topIds = top.map((t) => t.id);
+  await db.update(prompts).set({ isTrending: false }).where(eq(prompts.isTrending, true));
+  if (topIds.length > 0) {
+    await db.update(prompts).set({ isTrending: true }).where(inArray(prompts.id, topIds));
+  }
+  return topIds.length;
+}
+
+/** Publishes any prompt whose scheduled time has arrived. */
+export async function publishScheduled(): Promise<number> {
+  const now = nowSec();
+  const due = await db
+    .select({ id: prompts.id })
+    .from(prompts)
+    .where(
+      and(
+        eq(prompts.isPublished, false),
+        sql`${prompts.scheduledFor} is not null`,
+        sql`${prompts.scheduledFor} <= ${now}`,
+      ),
+    );
+
+  if (due.length === 0) return 0;
+  await db
+    .update(prompts)
+    .set({ isPublished: true, publishedAt: now, updatedAt: now })
+    .where(
+      inArray(
+        prompts.id,
+        due.map((d) => d.id),
+      ),
+    );
+  return due.length;
+}
+
+export async function countPublishedSince(seconds: number): Promise<number> {
+  const rows = await db
+    .select({ value: count() })
+    .from(prompts)
+    .where(and(eq(prompts.isPublished, true), sql`${prompts.publishedAt} >= ${seconds}`));
+  return rows[0]?.value ?? 0;
 }

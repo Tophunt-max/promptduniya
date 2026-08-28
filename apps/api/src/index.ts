@@ -15,8 +15,10 @@ import adminRoutes from './routes/admin';
 import viewerRoutes from './routes/viewer';
 import { clientIp } from './middleware';
 import { enforce } from './lib/rate-limit';
-import { hashIp } from './lib/crypto';
+import { hashIp, safeEqual } from './lib/crypto';
 import { processWebhook } from './services/payments';
+import { publishScheduled, recomputeTrending } from './services/prompts';
+import { expireDueSubscriptions, remindExpiringSubscriptions } from './services/subscriptions';
 
 /**
  * promptduniya API — a Hono Worker on Cloudflare.
@@ -110,4 +112,47 @@ app.notFound((c) =>
   c.json({ ok: false, error: { code: ErrorCodes.NOT_FOUND, message: 'Route not found' } }, 404),
 );
 
-export default app;
+/**
+ * Nightly maintenance: publish scheduled prompts, recompute trending scores,
+ * expire lapsed subscriptions and warn members whose plan ends soon.
+ *
+ * Exposed both as a Cloudflare cron trigger (see `wrangler.jsonc`) and as an
+ * authenticated POST so it can be run on demand. The POST requires
+ * `CRON_SECRET` because it mutates platform-wide state.
+ */
+async function runMaintenance() {
+  const [published, trending, expired, reminded] = await Promise.all([
+    publishScheduled(),
+    recomputeTrending(),
+    expireDueSubscriptions(),
+    remindExpiringSubscriptions(),
+  ]);
+  return { published, trending, expired, reminded };
+}
+
+app.post('/v1/cron/maintenance', async (c) => {
+  const expected = (c.env as unknown as Record<string, string | undefined>).CRON_SECRET ?? '';
+  const provided = c.req.header('x-cron-secret') ?? '';
+  if (!expected || !safeEqual(expected, provided)) {
+    throw AppError.forbidden('Invalid cron secret');
+  }
+  return c.json({ ok: true, data: await runMaintenance() });
+});
+
+export default {
+  fetch: app.fetch,
+  /** Cloudflare cron entry point. */
+  async scheduled(_event: unknown, env: CloudflareBindings, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    const raw = env as unknown as Record<string, unknown>;
+    const stringEnv: Record<string, string | undefined> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value === 'string') stringEnv[key] = value;
+    }
+    ctx.waitUntil(
+      runWithBindings(env, stringEnv, async () => {
+        const result = await runMaintenance();
+        console.info('[cron] maintenance complete:', result);
+      }),
+    );
+  },
+};
