@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "promptduniya-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-11-01",
+  // node:crypto, node:async_hooks (AsyncLocalStorage), Buffer, bcryptjs all need this.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // ---- D1 (relational database) ----
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "promptduniya",
+      "database_id": "REPLACE_WITH_D1_ID_FROM_wrangler_d1_create",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+
+  // ---- KV (rate limiting, sessions, settings cache) ----
+  "kv_namespaces": [
+    { "binding": "RATE_LIMIT", "id": "REPLACE_WITH_KV_ID" },
+    { "binding": "SESSIONS", "id": "REPLACE_WITH_KV_ID" },
+    { "binding": "CACHE", "id": "REPLACE_WITH_KV_ID" }
+  ],
+
+  // ---- R2 (media / uploads) ----
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "promptduniya-media" }
+  ],
+
+  // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----
+  "vars": {
+    "ENVIRONMENT": "production",
+    "WEB_ORIGIN": "https://promptduniya.in",
+    "ADMIN_ORIGIN": "https://admin.promptduniya.in",
+    "PAYMENTS_MOCK_MODE": "true",
+    "PAYMENTS_CURRENCY": "INR",
+    "AI_PROVIDER": "template",
+    "EMAIL_PROVIDER": "console",
+    "R2_PUBLIC_URL": "https://media.promptduniya.in"
+  }
+
+  // Secrets to set with `wrangler secret put <NAME>`:
+  //   AUTH_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
+  //   RAZORPAY_WEBHOOK_SECRET, AI_API_KEY, RESEND_API_KEY
+}

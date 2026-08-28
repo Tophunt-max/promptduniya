@@ -3,21 +3,26 @@ node_modules/
 .pnp
 .pnp.js
 
-# next.js
+# builds
 .next/
 out/
+dist/
 build/
+.open-next/
+.wrangler/
+*.tsbuildinfo
+
+# next
 next-env.d.ts
 
-# production
-dist/
-
-# environment — NEVER commit real secrets
+# environment — never commit real secrets
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 
-# database (local sqlite/libsql files)
+# local databases
 data/
 *.db
 *.db-journal
@@ -33,7 +38,6 @@ coverage/
 # misc
 .DS_Store
 *.pem
-.vercel
 .idea/
 .vscode/*
 !.vscode/extensions.json
@@ -44,8 +48,5 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# typescript
-*.tsbuildinfo
-
-# uploads (local dev fallback for object storage)
-public/uploads/
+# uploads (local storage fallback)
+apps/*/public/uploads/

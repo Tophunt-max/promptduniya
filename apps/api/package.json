@@ -1,0 +1,33 @@
+{
+  "name": "@pd/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "test": "vitest --run",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply promptduniya --local",
+    "db:migrate:remote": "wrangler d1 migrations apply promptduniya --remote",
+    "db:seed:local": "wrangler d1 execute promptduniya --local --file=./seed/seed.sql"
+  },
+  "dependencies": {
+    "@pd/db": "*",
+    "@pd/shared": "*",
+    "bcryptjs": "^3.0.2",
+    "drizzle-orm": "^0.44.2",
+    "hono": "^4.6.14",
+    "jose": "^6.0.11",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.40",
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "typescript": "^5.8.3",
+    "vitest": "~2.1.9",
+    "wrangler": "^3.99.0"
+  }
+}
