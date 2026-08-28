@@ -1,4 +1,4 @@
-import { jwtVerify } from 'jose';
+import { jwtVerify } from 'jose/jwt/verify';
 import { cookies } from 'next/headers';
 import { cache } from 'react';
 

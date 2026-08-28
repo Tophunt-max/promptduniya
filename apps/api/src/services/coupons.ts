@@ -21,6 +21,7 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
 export interface CouponEvaluation {
   couponId: string;
   code: string;
+  description: string | null;
   discountMinor: number;
   finalAmountMinor: number;
   discountLabel: string;
@@ -78,6 +79,7 @@ export async function evaluateCoupon(input: {
   return {
     couponId: coupon.id,
     code: coupon.code,
+    description: coupon.description,
     discountMinor,
     finalAmountMinor: input.plan.priceMinor - discountMinor,
     discountLabel:

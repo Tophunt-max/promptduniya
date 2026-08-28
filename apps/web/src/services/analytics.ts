@@ -1,36 +1,23 @@
-import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-
-import { db } from '@/db';
-import {
-  analyticsEvents,
-  favorites,
-  generatedPrompts,
-  likes,
-  pageViews,
-  payments,
-  promptCopies,
-  promptViews,
-  prompts,
-  searchQueries,
-  subscriptions,
-  users,
-} from '@/db/schema';
-import { SETTING_KEYS } from '@/lib/constants';
-import { dayBucket, lastNDayBuckets, nowSec } from '@/lib/dates';
-import { newId } from '@/lib/id';
-import { getBoolSetting } from './settings';
+import { apiRequest, query } from '@/lib/api-client';
+import { getAccessToken } from '@/lib/auth/session';
+import { AppError } from '@/lib/api';
 
 /**
- * First-party analytics.
+ * Analytics, recorded and aggregated by the API.
  *
- * We record pseudonymous aggregates only: a keyed visitor hash, a path and a
- * day bucket. No raw IP addresses, no cross-site identifiers, and the whole
- * subsystem can be switched off from the admin settings panel.
+ * Tracking is fire-and-forget: a failed beacon must never surface to the
+ * visitor, so the write helpers swallow errors. The dashboard aggregates come
+ * from a single admin endpoint to keep the admin page to one round trip.
  */
 
-async function enabled(): Promise<boolean> {
-  return getBoolSetting(SETTING_KEYS.analyticsEnabled, true);
+export interface DailySeries {
+  labels: string[];
+  values: number[];
 }
+
+const EMPTY_SERIES: DailySeries = { labels: [], values: [] };
+
+/* -------------------------------- Tracking -------------------------------- */
 
 export async function trackPageView(input: {
   path: string;
@@ -38,15 +25,15 @@ export async function trackPageView(input: {
   visitorHash?: string | null;
   referrer?: string | null;
 }): Promise<void> {
-  if (!(await enabled())) return;
-  await db.insert(pageViews).values({
-    id: newId(),
-    path: input.path.slice(0, 300),
-    userId: input.userId ?? null,
-    visitorHash: input.visitorHash ?? null,
-    referrer: input.referrer?.slice(0, 300) ?? null,
-    dayBucket: dayBucket(),
-  });
+  try {
+    await apiRequest('/v1/catalog/events', {
+      method: 'POST',
+      token: await getAccessToken(),
+      body: { name: 'page_view', path: input.path },
+    });
+  } catch {
+    // Analytics must never break a request.
+  }
 }
 
 export async function trackEvent(input: {
@@ -55,157 +42,18 @@ export async function trackEvent(input: {
   visitorHash?: string | null;
   props?: Record<string, unknown>;
 }): Promise<void> {
-  if (!(await enabled())) return;
-  await db.insert(analyticsEvents).values({
-    id: newId(),
-    name: input.name.slice(0, 60),
-    userId: input.userId ?? null,
-    visitorHash: input.visitorHash ?? null,
-    propsJson: input.props ? JSON.stringify(input.props).slice(0, 2000) : null,
-    dayBucket: dayBucket(),
-  });
-}
-
-export async function trackSearch(input: {
-  query: string;
-  normalized: string;
-  resultCount: number;
-  userId?: string | null;
-  visitorHash?: string | null;
-}): Promise<void> {
-  if (!(await enabled())) return;
-  if (input.normalized.length < 2) return;
-  await db.insert(searchQueries).values({
-    id: newId(),
-    query: input.query.slice(0, 120),
-    normalized: input.normalized.slice(0, 120),
-    resultCount: input.resultCount,
-    userId: input.userId ?? null,
-    visitorHash: input.visitorHash ?? null,
-    dayBucket: dayBucket(),
-  });
+  try {
+    await apiRequest('/v1/catalog/events', {
+      method: 'POST',
+      token: await getAccessToken(),
+      body: { name: input.name, props: input.props },
+    });
+  } catch {
+    /* ignored by design */
+  }
 }
 
 /* ------------------------------- Aggregates ------------------------------- */
-
-export interface DailySeries {
-  labels: string[];
-  values: number[];
-}
-
-async function seriesFrom(
-  table: typeof pageViews | typeof promptViews | typeof promptCopies | typeof generatedPrompts,
-  days: number,
-): Promise<DailySeries> {
-  const buckets = lastNDayBuckets(days);
-  const rows = await db
-    .select({ day: table.dayBucket, value: count() })
-    .from(table)
-    .where(gte(table.dayBucket, buckets[0]!))
-    .groupBy(table.dayBucket);
-
-  const map = new Map(rows.map((r) => [r.day, r.value]));
-  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
-}
-
-export async function dailyVisitors(days = 30): Promise<DailySeries> {
-  const buckets = lastNDayBuckets(days);
-  const rows = await db
-    .select({
-      day: pageViews.dayBucket,
-      value: sql<number>`count(distinct ${pageViews.visitorHash})`,
-    })
-    .from(pageViews)
-    .where(gte(pageViews.dayBucket, buckets[0]!))
-    .groupBy(pageViews.dayBucket);
-
-  const map = new Map(rows.map((r) => [r.day, Number(r.value)]));
-  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
-}
-
-export const dailyPromptViews = (days = 30) => seriesFrom(promptViews, days);
-export const dailyPromptCopies = (days = 30) => seriesFrom(promptCopies, days);
-export const dailyGeneratorUsage = (days = 30) => seriesFrom(generatedPrompts, days);
-
-export async function dailySignups(days = 30): Promise<DailySeries> {
-  const buckets = lastNDayBuckets(days);
-  const since = nowSec() - days * 86_400;
-  const rows = await db
-    .select({
-      day: sql<string>`strftime('%Y-%m-%d', ${users.createdAt}, 'unixepoch', '+330 minutes')`,
-      value: count(),
-    })
-    .from(users)
-    .where(gte(users.createdAt, since))
-    .groupBy(sql`1`);
-
-  const map = new Map(rows.map((r) => [r.day, r.value]));
-  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
-}
-
-export async function dailyRevenue(days = 30): Promise<DailySeries> {
-  const buckets = lastNDayBuckets(days);
-  const since = nowSec() - days * 86_400;
-  const rows = await db
-    .select({
-      day: sql<string>`strftime('%Y-%m-%d', ${payments.createdAt}, 'unixepoch', '+330 minutes')`,
-      value: sql<number>`coalesce(sum(${payments.amountMinor}), 0)`,
-    })
-    .from(payments)
-    .where(and(eq(payments.status, 'captured'), gte(payments.createdAt, since)))
-    .groupBy(sql`1`);
-
-  const map = new Map(rows.map((r) => [r.day, Number(r.value)]));
-  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
-}
-
-export async function dailyPremiumConversions(days = 30): Promise<DailySeries> {
-  const buckets = lastNDayBuckets(days);
-  const since = nowSec() - days * 86_400;
-  const rows = await db
-    .select({
-      day: sql<string>`strftime('%Y-%m-%d', ${subscriptions.createdAt}, 'unixepoch', '+330 minutes')`,
-      value: count(),
-    })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.status, 'active'), gte(subscriptions.createdAt, since)))
-    .groupBy(sql`1`);
-
-  const map = new Map(rows.map((r) => [r.day, r.value]));
-  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
-}
-
-export async function topPrompts(limit = 10) {
-  return db
-    .select({
-      id: prompts.id,
-      title: prompts.title,
-      slug: prompts.slug,
-      views: prompts.viewCount,
-      copies: prompts.copyCount,
-      likes: prompts.likeCount,
-    })
-    .from(prompts)
-    .where(eq(prompts.isPublished, true))
-    .orderBy(desc(prompts.viewCount))
-    .limit(limit);
-}
-
-export async function topSearches(limit = 10, days = 30) {
-  const buckets = lastNDayBuckets(days);
-  return db
-    .select({ term: searchQueries.normalized, hits: count() })
-    .from(searchQueries)
-    .where(gte(searchQueries.dayBucket, buckets[0]!))
-    .groupBy(searchQueries.normalized)
-    .orderBy(desc(count()))
-    .limit(limit);
-}
-
-export async function popularSearchTerms(limit = 8): Promise<string[]> {
-  const rows = await topSearches(limit, 90);
-  return rows.map((r) => r.term);
-}
 
 export interface PlatformStats {
   totalUsers: number;
@@ -226,94 +74,121 @@ export interface PlatformStats {
   generatorRuns: number;
 }
 
-export async function platformStats(): Promise<PlatformStats> {
-  const week = nowSec() - 7 * 86_400;
-  const month = nowSec() - 30 * 86_400;
-
-  const single = async (query: Promise<{ value: number }[]>) => Number((await query)[0]?.value ?? 0);
-
-  const [
-    totalUsers,
-    newUsers7d,
-    activeUsers30d,
-    premiumUsers,
-    totalRevenueMinor,
-    successfulPayments,
-    failedPayments,
-    totalPrompts,
-    publishedPrompts,
-    premiumPromptsCount,
-    promptViewsCount,
-    promptCopiesCount,
-    totalLikes,
-    totalFavorites,
-    generatorRuns,
-    mrrRows,
-  ] = await Promise.all([
-    single(db.select({ value: count() }).from(users)),
-    single(db.select({ value: count() }).from(users).where(gte(users.createdAt, week))),
-    single(db.select({ value: count() }).from(users).where(gte(users.lastLoginAt, month))),
-    single(
-      db
-        .select({ value: count() })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.status, 'active'), sql`${subscriptions.planId} is not null`)),
-    ),
-    single(
-      db
-        .select({ value: sql<number>`coalesce(sum(${payments.amountMinor}), 0)` })
-        .from(payments)
-        .where(eq(payments.status, 'captured')),
-    ),
-    single(db.select({ value: count() }).from(payments).where(eq(payments.status, 'captured'))),
-    single(db.select({ value: count() }).from(payments).where(eq(payments.status, 'failed'))),
-    single(db.select({ value: count() }).from(prompts)),
-    single(db.select({ value: count() }).from(prompts).where(eq(prompts.isPublished, true))),
-    single(db.select({ value: count() }).from(prompts).where(eq(prompts.isPremium, true))),
-    single(db.select({ value: sql<number>`coalesce(sum(${prompts.viewCount}), 0)` }).from(prompts)),
-    single(db.select({ value: sql<number>`coalesce(sum(${prompts.copyCount}), 0)` }).from(prompts)),
-    single(db.select({ value: count() }).from(likes)),
-    single(db.select({ value: count() }).from(favorites)),
-    single(db.select({ value: count() }).from(generatedPrompts)),
-    db
-      .select({
-        amount: sql<number>`coalesce(sum(${payments.amountMinor}), 0)`,
-      })
-      .from(payments)
-      .where(and(eq(payments.status, 'captured'), gte(payments.createdAt, month))),
-  ]);
-
-  return {
-    totalUsers,
-    newUsers7d,
-    activeUsers30d,
-    premiumUsers,
-    mrrMinor: Number(mrrRows[0]?.amount ?? 0),
-    totalRevenueMinor,
-    successfulPayments,
-    failedPayments,
-    totalPrompts,
-    publishedPrompts,
-    premiumPrompts: premiumPromptsCount,
-    promptViews: promptViewsCount,
-    promptCopies: promptCopiesCount,
-    totalLikes,
-    totalFavorites,
-    generatorRuns,
-  };
+export interface TopPromptRow {
+  id: string;
+  title: string;
+  slug: string;
+  views: number;
+  copies: number;
+  likes: number;
 }
 
-export async function topCategories(limit = 8) {
-  const { categories } = await import('@/db/schema');
-  return db
-    .select({
-      id: categories.id,
-      name: categories.name,
-      slug: categories.slug,
-      promptCount: categories.promptCount,
-    })
-    .from(categories)
-    .where(eq(categories.isActive, true))
-    .orderBy(desc(categories.promptCount))
-    .limit(limit);
+export interface TopSearchRow {
+  term: string;
+  hits: number;
+}
+
+export interface TopCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  promptCount: number;
+}
+
+interface SeriesResponse {
+  visitors: DailySeries;
+  promptViews: DailySeries;
+  promptCopies: DailySeries;
+  generatorUsage: DailySeries;
+  signups: DailySeries;
+  revenue: DailySeries;
+  conversions: DailySeries;
+  topPrompts: TopPromptRow[];
+  topSearches: TopSearchRow[];
+  topCategories: TopCategoryRow[];
+}
+
+async function adminToken(): Promise<string> {
+  const value = await getAccessToken();
+  if (!value) throw AppError.unauthorized();
+  return value;
+}
+
+/**
+ * All dashboard series in one call, memoised per `days` value so a page that
+ * renders seven charts still issues a single request.
+ */
+const seriesCache = new Map<number, Promise<SeriesResponse>>();
+
+function allSeries(days: number): Promise<SeriesResponse> {
+  const existing = seriesCache.get(days);
+  if (existing) return existing;
+
+  const request = (async () => {
+    try {
+      return await apiRequest<SeriesResponse>(`/v1/admin/stats/series${query({ days })}`, {
+        token: await adminToken(),
+      });
+    } catch (error) {
+      console.error('[analytics] series lookup failed:', error);
+      return {
+        visitors: EMPTY_SERIES,
+        promptViews: EMPTY_SERIES,
+        promptCopies: EMPTY_SERIES,
+        generatorUsage: EMPTY_SERIES,
+        signups: EMPTY_SERIES,
+        revenue: EMPTY_SERIES,
+        conversions: EMPTY_SERIES,
+        topPrompts: [],
+        topSearches: [],
+        topCategories: [],
+      } satisfies SeriesResponse;
+    } finally {
+      // Only de-duplicate within a single render pass.
+      setTimeout(() => seriesCache.delete(days), 0);
+    }
+  })();
+
+  seriesCache.set(days, request);
+  return request;
+}
+
+export const dailyVisitors = async (days = 30) => (await allSeries(days)).visitors;
+export const dailyPromptViews = async (days = 30) => (await allSeries(days)).promptViews;
+export const dailyPromptCopies = async (days = 30) => (await allSeries(days)).promptCopies;
+export const dailyGeneratorUsage = async (days = 30) => (await allSeries(days)).generatorUsage;
+export const dailySignups = async (days = 30) => (await allSeries(days)).signups;
+export const dailyRevenue = async (days = 30) => (await allSeries(days)).revenue;
+export const dailyPremiumConversions = async (days = 30) => (await allSeries(days)).conversions;
+
+export async function topPrompts(limit = 10): Promise<TopPromptRow[]> {
+  return (await allSeries(30)).topPrompts.slice(0, limit);
+}
+
+export async function topSearches(limit = 10, days = 30): Promise<TopSearchRow[]> {
+  return (await allSeries(days)).topSearches.slice(0, limit);
+}
+
+export async function topCategories(limit = 8): Promise<TopCategoryRow[]> {
+  return (await allSeries(30)).topCategories.slice(0, limit);
+}
+
+export async function platformStats(): Promise<PlatformStats> {
+  return apiRequest<PlatformStats>('/v1/admin/stats', { token: await adminToken() });
+}
+
+/**
+ * Popular search terms for the public discovery UI. Anonymous-safe, so it uses
+ * the catalog endpoint rather than the admin aggregates.
+ */
+export async function popularSearchTerms(limit = 8): Promise<string[]> {
+  try {
+    const data = await apiRequest<{ popular: { term: string; hits: number }[] }>(
+      `/v1/catalog/search/discovery${query({ limit })}`,
+      { revalidate: 300 },
+    );
+    return data.popular.map((row) => row.term);
+  } catch {
+    return [];
+  }
 }

@@ -1,4 +1,6 @@
-import { jwtVerify } from 'jose';
+// Imported from the submodule so the Edge bundle does not pull in jose's JWE
+// encryption path, which references CompressionStream.
+import { jwtVerify } from 'jose/jwt/verify';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**

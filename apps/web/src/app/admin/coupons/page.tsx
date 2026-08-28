@@ -4,7 +4,6 @@ import { AdminShell } from '@/components/admin/admin-shell';
 import { CouponManager } from '@/components/admin/coupon-manager';
 import { InfoIcon } from '@/components/ui/icon';
 import { requireStrictAdminPage } from '@/lib/auth/guards';
-import { parseJson } from '@/lib/utils';
 import { listCoupons } from '@/services/coupons';
 import { listPlans } from '@/services/plans';
 
@@ -32,10 +31,7 @@ export default async function AdminCouponsPage() {
       </div>
 
       <CouponManager
-        initial={coupons.map((coupon) => ({
-          ...coupon,
-          applicablePlans: parseJson<string[]>(coupon.applicablePlansJson, []),
-        }))}
+        initial={coupons}
         plans={plans.filter((plan) => plan.priceMinor > 0).map((plan) => ({ code: plan.code, name: plan.name }))}
       />
     </AdminShell>

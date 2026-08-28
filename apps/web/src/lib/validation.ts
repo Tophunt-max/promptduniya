@@ -10,7 +10,7 @@ import {
   QUALITY_LEVELS,
   SORT_OPTIONS,
 } from './constants';
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from './auth/password';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from './auth/password-strength';
 
 /* ============================== Primitives ============================== */
 

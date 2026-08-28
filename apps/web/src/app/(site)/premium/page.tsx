@@ -6,7 +6,7 @@ import { JsonLd } from '@/components/seo/json-ld';
 import { Badge } from '@/components/ui/badge';
 import { CheckIcon, CloseIcon, ShieldIcon } from '@/components/ui/icon';
 import { formatDate } from '@/lib/dates';
-import { razorpayConfigured } from '@/lib/env';
+import { razorpayConfigured } from '@/services/settings';
 import { breadcrumbSchema, buildMetadata, faqSchema, productSchema } from '@/lib/seo';
 import { formatMoney } from '@/lib/utils';
 import { getAccess } from '@/lib/viewer';
@@ -71,13 +71,13 @@ const COMPARISON = [
 
 export default async function PremiumPage() {
   const access = await getAccess();
-  const [plans, subscription] = await Promise.all([
+  const [plans, subscription, liveGateway] = await Promise.all([
     pricingTable(),
     access.userId ? currentSubscription(access.userId) : Promise.resolve(null),
+    razorpayConfigured(),
   ]);
 
   const monthly = plans.find((plan) => plan.code === 'monthly');
-  const liveGateway = razorpayConfigured();
 
   function savingsFor(planCode: string, priceMinor: number): string | null {
     if (!monthly || monthly.priceMinor === 0) return null;

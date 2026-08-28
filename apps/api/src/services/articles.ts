@@ -15,6 +15,7 @@ export interface ArticleCard {
   excerpt: string | null;
   featuredImageUrl: string | null;
   categoryName: string | null;
+  categorySlug: string | null;
   authorName: string | null;
   publishedAt: number | null;
   readingMinutes: number;
@@ -28,6 +29,7 @@ const cardColumns = {
   excerpt: articles.excerpt,
   featuredImageUrl: articles.featuredImageUrl,
   categoryName: categories.name,
+  categorySlug: categories.slug,
   authorName: users.name,
   publishedAt: articles.publishedAt,
   readingMinutes: articles.readingMinutes,

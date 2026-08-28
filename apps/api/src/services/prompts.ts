@@ -400,6 +400,7 @@ export async function adminGetPrompt(id: string) {
       .where(eq(promptImages.promptId, id))
       .orderBy(promptImages.sortOrder),
   ]);
+  // The raw row carries every admin-editable column, including categoryId.
   return { ...prompt, tags: tagRows, images: imageRows };
 }
 

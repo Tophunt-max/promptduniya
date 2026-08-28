@@ -3,9 +3,7 @@ import type { Metadata } from 'next';
 import { AdminShell } from '@/components/admin/admin-shell';
 import { SettingsEditor } from '@/components/admin/settings-editor';
 import { requireStrictAdminPage } from '@/lib/auth/guards';
-import { aiConfigured, razorpayConfigured, storageConfigured } from '@/lib/env';
-import { getSettings } from '@/services/settings';
-import { storageMode } from '@/services/storage';
+import { getCapabilities, getSettings } from '@/services/settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +11,7 @@ export const metadata: Metadata = { title: 'Settings' };
 
 export default async function AdminSettingsPage() {
   await requireStrictAdminPage();
-  const settings = await getSettings();
+  const [settings, capabilities] = await Promise.all([getSettings(), getCapabilities()]);
 
   return (
     <AdminShell
@@ -23,9 +21,9 @@ export default async function AdminSettingsPage() {
       <SettingsEditor
         initial={settings}
         integrations={{
-          payments: razorpayConfigured() ? 'razorpay' : 'mock',
-          ai: aiConfigured() ? 'configured' : 'template',
-          storage: storageConfigured() ? storageMode() : 'local',
+          payments: capabilities.payments,
+          ai: capabilities.ai,
+          storage: capabilities.storage,
         }}
       />
     </AdminShell>

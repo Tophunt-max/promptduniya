@@ -18,7 +18,16 @@ import {
   relatedArticles,
 } from '../services/articles';
 import { getBrand, getPublicSettings } from '../services/settings';
-import { allCategorySlugs, featuredCategories, getCategoryBySlug, listCategories, popularTags } from '../services/categories';
+import { config, razorpayConfigured } from '../lib/env';
+import {
+  allCategorySlugs,
+  featuredCategories,
+  getCategoryBySlug,
+  listCategories,
+  listTags,
+  popularTags,
+  subcategories,
+} from '../services/categories';
 import {
   noResultAlternatives,
   normalizeQuery,
@@ -52,7 +61,16 @@ catalog.get('/categories/:slug', async (c) => {
 });
 
 catalog.get('/tags', async (c) => {
+  const p = new URL(c.req.url).searchParams;
+  // ?all=1 returns the full tag index (with counts) for admin pickers.
+  if (p.get('all') === '1') {
+    return c.json({ ok: true, data: { items: await listTags(Number(p.get('limit')) || 60) } });
+  }
   return c.json({ ok: true, data: { items: await popularTags(24) } });
+});
+
+catalog.get('/categories/:id/subcategories', async (c) => {
+  return c.json({ ok: true, data: { items: await subcategories(c.req.param('id')) } });
 });
 
 catalog.get('/search', async (c) => {
@@ -110,10 +128,30 @@ catalog.get('/plans', async (c) => {
 
 /* ------------------------------ Branding -------------------------------- */
 
-/** Site identity + public settings, used by the website's layout and metadata. */
+/**
+ * Site identity, public settings and the API's own capability flags.
+ *
+ * The frontends can't inspect the API's secrets, so the API reports which
+ * integrations are live (real gateway vs. mock, AI vs. template engine). This
+ * drives status badges only — never an authorisation decision.
+ */
 catalog.get('/brand', async (c) => {
   const [brand, settings] = await Promise.all([getBrand(), getPublicSettings()]);
-  return c.json({ ok: true, data: { brand, settings } });
+  const cfg = config();
+  return c.json({
+    ok: true,
+    data: {
+      brand,
+      settings,
+      capabilities: {
+        payments: razorpayConfigured() ? 'razorpay' : 'mock',
+        ai: cfg.aiProvider !== 'template' && cfg.aiApiKey ? 'configured' : 'template',
+        storage: 'r2',
+        email: cfg.emailProvider,
+        razorpayKeyId: razorpayConfigured() ? cfg.razorpayKeyId : '',
+      },
+    },
+  });
 });
 
 /* ------------------------------ Articles -------------------------------- */

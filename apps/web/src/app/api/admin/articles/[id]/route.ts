@@ -1,10 +1,7 @@
-import { eq } from 'drizzle-orm';
-
-import { AppError, handle, ok } from '@/lib/api';
+import { handle, ok } from '@/lib/api';
 import { requireEditor } from '@/lib/auth/guards';
 import { routeContext } from '@/lib/route-context';
-import { db } from '@/db';
-import { articles } from '@/db/schema';
+import { getArticleById } from '@/services/articles';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +12,5 @@ export const GET = handle(async (request: Request, context: { params: Promise<{ 
   await requireEditor();
 
   const { id } = await context.params;
-  const rows = await db.select().from(articles).where(eq(articles.id, id)).limit(1);
-  const article = rows[0];
-  if (!article) throw AppError.notFound('Article not found');
-
-  return ok({ article });
+  return ok({ article: await getArticleById(id) });
 });

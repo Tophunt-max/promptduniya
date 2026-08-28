@@ -1,14 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
-
 import { AdminShell } from '@/components/admin/admin-shell';
 import { PromptEditor } from '@/components/admin/prompt-editor';
 import { ButtonLink } from '@/components/ui/button';
 import { EyeIcon } from '@/components/ui/icon';
-import { db } from '@/db';
-import { promptTags, tags } from '@/db/schema';
 import { requireAdminPage } from '@/lib/auth/guards';
 import { formatDateTime } from '@/lib/dates';
 import { formatCompact } from '@/lib/utils';
@@ -29,12 +25,6 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
   ]);
 
   if (!prompt) notFound();
-
-  const tagRows = await db
-    .select({ name: tags.name })
-    .from(promptTags)
-    .innerJoin(tags, eq(tags.id, promptTags.tagId))
-    .where(eq(promptTags.promptId, prompt.id));
 
   return (
     <AdminShell
@@ -67,7 +57,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
           title: prompt.title,
           slug: prompt.slug,
           shortDescription: prompt.shortDescription,
-          promptText: prompt.promptText,
+          promptText: prompt.promptText ?? '',
           negativePrompt: prompt.negativePrompt ?? '',
           usageInstructions: prompt.usageInstructions ?? '',
           aiModel: prompt.aiModel,
@@ -81,7 +71,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
           lighting: prompt.lighting ?? '',
           mood: prompt.mood ?? '',
           difficulty: prompt.difficulty,
-          tags: tagRows.map((row) => row.name).join(', '),
+          tags: prompt.tags.map((tag) => tag.name).join(', '),
           coverImageUrl: prompt.coverImageUrl ?? '',
           coverImageAlt: prompt.coverImageAlt ?? '',
           seoTitle: prompt.seoTitle ?? '',

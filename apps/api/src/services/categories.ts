@@ -90,9 +90,68 @@ export interface CategoryWriteInput {
   seoDescription?: string | null;
 }
 
+export interface AdminCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  accent: string;
+  icon: string | null;
+  parentId: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  isFeatured: boolean;
+  promptCount: number;
+  updatedAt: number;
+}
+
 /** Admin listing includes inactive categories and sub-categories. */
-export async function adminListCategories(): Promise<CategorySummary[]> {
-  return listCategories({ activeOnly: false });
+export async function adminListCategories(): Promise<AdminCategoryRow[]> {
+  return db
+    .select({
+      id: categories.id,
+      name: categories.name,
+      slug: categories.slug,
+      description: categories.description,
+      accent: categories.accent,
+      icon: categories.icon,
+      parentId: categories.parentId,
+      sortOrder: categories.sortOrder,
+      isActive: categories.isActive,
+      isFeatured: categories.isFeatured,
+      promptCount: categories.promptCount,
+      updatedAt: categories.updatedAt,
+    })
+    .from(categories)
+    .orderBy(asc(categories.sortOrder), asc(categories.name));
+}
+
+/** Active children of a category. */
+export async function subcategories(parentId: string): Promise<CategorySummary[]> {
+  return db
+    .select({
+      id: categories.id,
+      name: categories.name,
+      slug: categories.slug,
+      description: categories.description,
+      icon: categories.icon,
+      accent: categories.accent,
+      coverImageUrl: categories.coverImageUrl,
+      promptCount: categories.promptCount,
+      isFeatured: categories.isFeatured,
+      sortOrder: categories.sortOrder,
+    })
+    .from(categories)
+    .where(and(eq(categories.parentId, parentId), eq(categories.isActive, true)))
+    .orderBy(asc(categories.sortOrder));
+}
+
+export async function listTags(limit = 60) {
+  return db
+    .select({ id: tags.id, name: tags.name, slug: tags.slug, usageCount: tags.usageCount })
+    .from(tags)
+    .orderBy(desc(tags.usageCount))
+    .limit(limit);
 }
 
 async function ensureUniqueCategorySlug(base: string, excludeId?: string): Promise<string> {

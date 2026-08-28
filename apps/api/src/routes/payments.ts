@@ -85,7 +85,9 @@ pay.post('/coupon', async (c) => {
   return c.json({
     ok: true,
     data: {
+      couponId: evaluation.couponId,
       code: evaluation.code,
+      description: evaluation.description,
       discountMinor: evaluation.discountMinor,
       discountLabel: evaluation.discountLabel,
       finalAmountMinor: evaluation.finalAmountMinor,

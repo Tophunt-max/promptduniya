@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import type { NextConfig } from 'next';
 
 /**
@@ -39,12 +41,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  serverExternalPackages: ['@libsql/client'],
+  // Monorepo: trace from the repository root so workspace packages resolve.
+  outputFileTracingRoot: join(import.meta.dirname, '../..'),
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       { protocol: 'https', hostname: '**.r2.dev' },
-      { protocol: 'https', hostname: '**.cloudflarestorage.com' },
+      { protocol: 'https', hostname: 'media.promptduniya.in' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },

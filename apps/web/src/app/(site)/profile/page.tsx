@@ -4,9 +4,7 @@ import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 import { ProfileForm } from '@/components/dashboard/profile-form';
 import { requireUserPage } from '@/lib/auth/guards';
 import { buildMetadata } from '@/lib/seo';
-import { db } from '@/db';
-import { profiles } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { getProfile } from '@/services/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,18 +17,7 @@ export const metadata: Metadata = buildMetadata({
 export default async function ProfilePage() {
   const user = await requireUserPage('/profile');
 
-  const profileRows = await db
-    .select({
-      location: profiles.location,
-      website: profiles.website,
-      instagram: profiles.instagram,
-      youtube: profiles.youtube,
-    })
-    .from(profiles)
-    .where(eq(profiles.userId, user.id))
-    .limit(1);
-
-  const profile = profileRows[0] ?? { location: null, website: null, instagram: null, youtube: null };
+  const profile = await getProfile();
 
   return (
     <DashboardShell title="Your profile" description="How you appear across promptduniya.">

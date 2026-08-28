@@ -24,46 +24,18 @@ const serverSchema = z.object({
    */
   API_BASE_URL: z.string().url().default('http://127.0.0.1:8787'),
 
-  DATABASE_URL: z.string().min(1).default('file:./data/promptduniya.db'),
-  DATABASE_AUTH_TOKEN: z.string().optional(),
-
+  /**
+   * Shared with the API — used to verify the access-token signature locally so
+   * resolving a session costs no network call.
+   */
   AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 characters'),
   /** Lifetime of the refresh cookie; must match the API's REFRESH_TOKEN_DAYS. */
   AUTH_SESSION_DAYS: z.coerce.number().int().positive().max(365).default(30),
-  AUTH_BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
-
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
 
   PRIMARY_DOMAIN: z.string().default('promptduniya.in'),
 
-  RAZORPAY_KEY_ID: z.string().optional(),
-  RAZORPAY_KEY_SECRET: z.string().optional(),
-  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
-  PAYMENTS_MOCK_MODE: boolish(true),
-  PAYMENTS_CURRENCY: z.string().length(3).default('INR'),
-
-  AI_PROVIDER: z.enum(['template', 'gemini', 'openai']).default('template'),
-  AI_API_KEY: z.string().optional(),
-  AI_API_BASE_URL: z.string().optional(),
-  AI_MODEL: z.string().optional(),
-
-  R2_ACCOUNT_ID: z.string().optional(),
-  R2_ACCESS_KEY_ID: z.string().optional(),
-  R2_SECRET_ACCESS_KEY: z.string().optional(),
-  R2_BUCKET: z.string().optional(),
-  R2_PUBLIC_URL: z.string().optional(),
-
-  EMAIL_PROVIDER: z.enum(['console', 'smtp', 'resend']).default('console'),
-  EMAIL_FROM: z.string().default('promptduniya <no-reply@promptduniya.in>'),
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASSWORD: z.string().optional(),
-  RESEND_API_KEY: z.string().optional(),
-
-  RATE_LIMIT_DRIVER: z.enum(['memory', 'redis']).default('memory'),
-  REDIS_URL: z.string().optional(),
+  /** Shared with the API so the maintenance job can be kicked manually. */
+  CRON_SECRET: z.string().optional(),
 
   MAINTENANCE_MODE: boolish(false),
 });
@@ -112,21 +84,3 @@ export const publicEnv = {
 
 export const isProd = () => env().NODE_ENV === 'production';
 export const isTest = () => env().NODE_ENV === 'test';
-
-/** Whether real Razorpay credentials are configured. */
-export function razorpayConfigured(): boolean {
-  const e = env();
-  return Boolean(e.RAZORPAY_KEY_ID && e.RAZORPAY_KEY_SECRET) && !e.PAYMENTS_MOCK_MODE;
-}
-
-/** Whether a real AI provider is configured for the generator. */
-export function aiConfigured(): boolean {
-  const e = env();
-  return e.AI_PROVIDER !== 'template' && Boolean(e.AI_API_KEY);
-}
-
-/** Whether object storage is configured, otherwise local disk is used. */
-export function storageConfigured(): boolean {
-  const e = env();
-  return Boolean(e.R2_ACCOUNT_ID && e.R2_ACCESS_KEY_ID && e.R2_SECRET_ACCESS_KEY && e.R2_BUCKET);
-}

@@ -72,6 +72,13 @@ import {
 } from '../services/analytics';
 import { getSettings, setSettings, type SettingValue } from '../services/settings';
 import { adminListSubscriptions } from '../services/subscriptions';
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_UPLOAD_BYTES,
+  storageMode,
+  uploadImage,
+} from '../services/storage';
+import { AppError } from '../lib/errors';
 import { adminListPaymentEvents, adminListPayments } from '../services/payments';
 
 /**
@@ -447,6 +454,46 @@ admin.get('/stats/series', async (c) => {
       topSearches: searches,
       topCategories: categories,
     },
+  });
+});
+
+/* ------------------------------- Uploads -------------------------------- */
+
+/**
+ * Image upload straight to R2. Validation (size, MIME allow-list, magic bytes)
+ * happens in the service before a single byte is stored.
+ */
+admin.post('/upload', async (c) => {
+  const claims = requireEditor(c);
+  const form = await c.req.formData();
+  const file = form.get('file') as unknown;
+  if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
+    throw AppError.badRequest('A file is required');
+  }
+
+  const folder = form.get('folder');
+  const stored = await uploadImage({
+    file: file as File,
+    folder: typeof folder === 'string' ? folder : undefined,
+  });
+
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'media.upload',
+    targetType: 'media',
+    targetId: stored.objectKey,
+    meta: { size: stored.fileSize, mime: stored.mimeType },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: stored }, 201);
+});
+
+admin.get('/upload/config', async (c) => {
+  requireEditor(c);
+  return c.json({
+    ok: true,
+    data: { maxBytes: MAX_UPLOAD_BYTES, driver: storageMode(), allowed: [...ALLOWED_MIME_TYPES] },
   });
 });
 

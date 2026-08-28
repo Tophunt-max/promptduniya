@@ -36,7 +36,8 @@ async function runTasks() {
 function assertAuthorised(request: Request) {
   const header = request.headers.get('authorization') ?? '';
   const token = header.replace(/^Bearer\s+/i, '');
-  if (!token || !safeEqual(token, env().AUTH_SECRET)) {
+  const expected = env().CRON_SECRET ?? '';
+  if (!expected || !token || !safeEqual(token, expected)) {
     throw AppError.forbidden('Invalid or missing cron token');
   }
 }

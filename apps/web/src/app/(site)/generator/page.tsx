@@ -6,7 +6,7 @@ import { JsonLd } from '@/components/seo/json-ld';
 import { Badge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
 import { DiceIcon } from '@/components/ui/icon';
-import { aiConfigured } from '@/lib/env';
+import { aiConfigured } from '@/services/settings';
 import { breadcrumbSchema, buildMetadata, faqSchema } from '@/lib/seo';
 import { getAccess } from '@/lib/viewer';
 
@@ -39,8 +39,7 @@ const FAQS = [
 ];
 
 export default async function GeneratorPage() {
-  const access = await getAccess();
-  const aiAvailable = aiConfigured();
+  const [access, aiAvailable] = await Promise.all([getAccess(), aiConfigured()]);
 
   return (
     <div className="container-page py-8 sm:py-12">
