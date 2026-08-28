@@ -93,3 +93,97 @@ export function periodEnd(plan: PlanView, from: number): number | null {
       return null; // lifetime / none
   }
 }
+
+
+/* =========================== Admin writes ============================= */
+
+import { newId } from '../lib/crypto';
+import { nowSec } from '../lib/dates';
+import { slugify } from '@pd/shared';
+
+export interface PlanWriteInput {
+  code?: string;
+  name: string;
+  description?: string | null;
+  priceMinor?: number;
+  currency?: string;
+  billingPeriod?: PlanView['billingPeriod'];
+  intervalCount?: number;
+  trialDays?: number;
+  features?: string[];
+  limits?: Record<string, number>;
+  razorpayPlanId?: string | null;
+  isActive?: boolean;
+  isPopular?: boolean;
+  sortOrder?: number;
+}
+
+/** Admin listing returns inactive plans too. */
+export async function adminListPlans(): Promise<PlanView[]> {
+  return listPlans({ activeOnly: false });
+}
+
+export async function createPlan(input: PlanWriteInput): Promise<PlanView> {
+  if (!input.name?.trim()) throw AppError.badRequest('Name is required');
+  const code = (input.code || slugify(input.name) || 'plan').toLowerCase();
+  const existing = await getPlanByCode(code);
+  if (existing) throw AppError.conflict('A plan with that code already exists');
+  const id = newId();
+  await db.insert(plans).values({
+    id,
+    code,
+    name: input.name,
+    description: input.description ?? null,
+    priceMinor: input.priceMinor ?? 0,
+    currency: input.currency ?? 'INR',
+    billingPeriod: input.billingPeriod ?? 'none',
+    intervalCount: input.intervalCount ?? 1,
+    trialDays: input.trialDays ?? 0,
+    featuresJson: JSON.stringify(input.features ?? []),
+    limitsJson: JSON.stringify(input.limits ?? {}),
+    razorpayPlanId: input.razorpayPlanId ?? null,
+    isActive: input.isActive ?? true,
+    isPopular: input.isPopular ?? false,
+    sortOrder: input.sortOrder ?? 0,
+  });
+  return (await getPlanById(id))!;
+}
+
+export async function updatePlan(id: string, input: PlanWriteInput): Promise<PlanView> {
+  const existing = await db.select().from(plans).where(eq(plans.id, id)).limit(1);
+  const row = existing[0];
+  if (!row) throw AppError.notFound('Plan not found');
+  await db
+    .update(plans)
+    .set({
+      name: input.name ?? row.name,
+      description: input.description ?? row.description,
+      priceMinor: input.priceMinor ?? row.priceMinor,
+      currency: input.currency ?? row.currency,
+      billingPeriod: input.billingPeriod ?? row.billingPeriod,
+      intervalCount: input.intervalCount ?? row.intervalCount,
+      trialDays: input.trialDays ?? row.trialDays,
+      featuresJson: input.features ? JSON.stringify(input.features) : row.featuresJson,
+      limitsJson: input.limits ? JSON.stringify(input.limits) : row.limitsJson,
+      razorpayPlanId: input.razorpayPlanId ?? row.razorpayPlanId,
+      isActive: input.isActive ?? row.isActive,
+      isPopular: input.isPopular ?? row.isPopular,
+      sortOrder: input.sortOrder ?? row.sortOrder,
+      updatedAt: nowSec(),
+    })
+    .where(eq(plans.id, id));
+  return (await getPlanById(id))!;
+}
+
+export async function setPlanActive(id: string, isActive: boolean): Promise<PlanView> {
+  const existing = await getPlanById(id);
+  if (!existing) throw AppError.notFound('Plan not found');
+  await db.update(plans).set({ isActive, updatedAt: nowSec() }).where(eq(plans.id, id));
+  return (await getPlanById(id))!;
+}
+
+export async function deletePlan(id: string): Promise<void> {
+  const existing = await getPlanById(id);
+  if (!existing) throw AppError.notFound('Plan not found');
+  await db.delete(plans).where(eq(plans.id, id));
+}

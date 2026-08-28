@@ -1,4 +1,4 @@
-import { categories, db, tags } from '@pd/db';
+import { categories, db, prompts, tags } from '@pd/db';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 
 /** Category and tag reads for the website. */
@@ -65,4 +65,117 @@ export async function popularTags(limit = 18): Promise<{ name: string; slug: str
     .where(sql`${tags.usageCount} > 0`)
     .orderBy(desc(tags.usageCount))
     .limit(limit);
+}
+
+
+/* =========================== Admin writes ============================= */
+
+import { newId } from '../lib/crypto';
+import { nowSec } from '../lib/dates';
+import { AppError } from '../lib/errors';
+import { slugify } from '@pd/shared';
+
+export interface CategoryWriteInput {
+  name: string;
+  slug?: string;
+  description?: string | null;
+  icon?: string | null;
+  accent?: string;
+  coverImageUrl?: string | null;
+  parentId?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+  isFeatured?: boolean;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+}
+
+/** Admin listing includes inactive categories and sub-categories. */
+export async function adminListCategories(): Promise<CategorySummary[]> {
+  return listCategories({ activeOnly: false });
+}
+
+async function ensureUniqueCategorySlug(base: string, excludeId?: string): Promise<string> {
+  const root = slugify(base) || 'category';
+  let candidate = root;
+  let n = 1;
+  for (;;) {
+    const existing = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.slug, candidate))
+      .limit(1);
+    const hit = existing[0];
+    if (!hit || hit.id === excludeId) return candidate;
+    n += 1;
+    candidate = `${root}-${n}`;
+  }
+}
+
+export async function createCategory(input: CategoryWriteInput) {
+  if (!input.name?.trim()) throw AppError.badRequest('Name is required');
+  const id = newId();
+  const slug = await ensureUniqueCategorySlug(input.slug || input.name);
+  await db.insert(categories).values({
+    id,
+    name: input.name,
+    slug,
+    description: input.description ?? null,
+    icon: input.icon ?? null,
+    accent: input.accent ?? 'indigo',
+    coverImageUrl: input.coverImageUrl ?? null,
+    parentId: input.parentId ?? null,
+    sortOrder: input.sortOrder ?? 0,
+    isActive: input.isActive ?? true,
+    isFeatured: input.isFeatured ?? false,
+    seoTitle: input.seoTitle ?? null,
+    seoDescription: input.seoDescription ?? null,
+  });
+  return getCategoryById(id);
+}
+
+export async function updateCategory(id: string, input: CategoryWriteInput) {
+  const existing = await getCategoryById(id);
+  if (!existing) throw AppError.notFound('Category not found');
+  if (!input.name?.trim()) throw AppError.badRequest('Name is required');
+  const slug = input.slug && input.slug !== existing.slug
+    ? await ensureUniqueCategorySlug(input.slug, id)
+    : existing.slug;
+  await db
+    .update(categories)
+    .set({
+      name: input.name,
+      slug,
+      description: input.description ?? null,
+      icon: input.icon ?? null,
+      accent: input.accent ?? existing.accent,
+      coverImageUrl: input.coverImageUrl ?? null,
+      parentId: input.parentId ?? null,
+      sortOrder: input.sortOrder ?? existing.sortOrder,
+      isActive: input.isActive ?? existing.isActive,
+      isFeatured: input.isFeatured ?? existing.isFeatured,
+      seoTitle: input.seoTitle ?? null,
+      seoDescription: input.seoDescription ?? null,
+      updatedAt: nowSec(),
+    })
+    .where(eq(categories.id, id));
+  return getCategoryById(id);
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  const existing = await getCategoryById(id);
+  if (!existing) throw AppError.notFound('Category not found');
+  const [inUse] = await db
+    .select({ value: sql<number>`count(*)` })
+    .from(prompts)
+    .where(eq(prompts.categoryId, id));
+  if ((inUse?.value ?? 0) > 0) {
+    throw AppError.conflict('Category still has prompts assigned to it');
+  }
+  await db.delete(categories).where(eq(categories.id, id));
+}
+
+export async function getCategoryById(id: string) {
+  const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
+  return rows[0] ?? null;
 }
