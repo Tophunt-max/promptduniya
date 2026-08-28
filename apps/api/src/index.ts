@@ -8,6 +8,13 @@ import { AppError } from './lib/errors';
 import { allowedOrigins } from './lib/env';
 import authRoutes from './routes/auth';
 import promptRoutes from './routes/prompts';
+import generatorRoutes from './routes/generator';
+import catalogRoutes from './routes/catalog';
+import paymentRoutes from './routes/payments';
+import { clientIp } from './middleware';
+import { enforce } from './lib/rate-limit';
+import { hashIp } from './lib/crypto';
+import { processWebhook } from './services/payments';
 
 /**
  * promptduniya API — a Hono Worker on Cloudflare.
@@ -51,6 +58,21 @@ app.get('/health', (c) => c.json({ ok: true, data: { status: 'healthy', ts: Date
 // 3. Versioned routes.
 app.route('/v1/auth', authRoutes);
 app.route('/v1/prompts', promptRoutes);
+app.route('/v1/generator', generatorRoutes);
+app.route('/v1/catalog', catalogRoutes);
+app.route('/v1/payments', paymentRoutes);
+
+// Provider webhook — no session/CORS auth; authenticity is the HMAC signature.
+// Mounted on its own path (not under the /v1/payments sub-app) so the raw body
+// is read verbatim without the auth middleware running.
+app.post('/v1/webhooks/razorpay', async (c) => {
+  await enforce('webhook', hashIp(clientIp(c as never)));
+  const rawBody = await c.req.text();
+  const signature = c.req.header('x-razorpay-signature') ?? c.req.header('x-webhook-signature') ?? null;
+  const deliveryId = c.req.header('x-razorpay-event-id') ?? c.req.header('x-webhook-event-id') ?? null;
+  const outcome = await processWebhook({ rawBody, signature, deliveryId });
+  return c.json({ ok: true, data: outcome });
+});
 
 // 4. Consistent error envelope. Internal details are never leaked.
 app.onError((err, c) => {

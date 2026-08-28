@@ -55,11 +55,26 @@ apps/
 | # | Task | State |
 | --- | --- | --- |
 | 1 | Monorepo + `@pd/shared` + `@pd/db` (D1) | ✅ done, typechecks |
-| 2 | Binding-agnostic services (auth, entitlements, prompts, engagement, settings) | ✅ vertical slice done |
-| 3 | `apps/api` Hono Worker (auth, prompts, copy, rate-limit, CORS, error envelope) | ✅ builds; remaining endpoints follow the same pattern |
+| 2 | Binding-agnostic services (auth, entitlements, prompts, engagement, generator, plans, coupons, subscriptions, payments, settings, search, categories) | ✅ done |
+| 3 | `apps/api` Hono Worker — auth, prompts, copy/like/favorite, generator (+ random), catalog/search, payments (order/verify/webhook), subscriptions | ✅ builds; admin write-endpoints pending |
 | 4 | `apps/web` refactored onto the API | ⏳ next |
-| 5 | `apps/admin` Vite SPA | ⏳ next |
+| 5 | `apps/admin` Vite SPA (+ admin API endpoints) | ⏳ next |
 | 6 | Deploy configs + docs (wrangler, D1 migrate, service bindings) | 🟡 wrangler.jsonc done; full guide pending |
+
+### API endpoints so far
+
+```
+GET  /health
+POST /v1/auth/register · login · refresh · logout      GET /v1/auth/me
+GET  /v1/prompts · /v1/prompts/:slug · /v1/prompts/sitemap
+POST /v1/prompts/copy · like · favorite
+POST /v1/generator · /v1/generator/random · /save      GET /v1/generator
+GET  /v1/catalog/categories(/:slug) · /tags · /search · /search/suggest · /plans
+POST /v1/payments/order · verify · mock-complete · coupon
+GET  /v1/payments/history · /v1/payments/subscription
+POST /v1/payments/subscription/cancel
+POST /v1/webhooks/razorpay   (HMAC-verified, idempotent)
+```
 
 ## Verified so far
 
