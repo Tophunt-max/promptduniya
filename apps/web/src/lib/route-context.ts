@@ -1,10 +1,10 @@
 import { AppError, clientIp } from './api';
 import { hashIp, hashVisitor } from './crypto';
-import { verifyCsrf } from './auth/session';
+import { getAccessToken, verifyCsrf } from './auth/session';
 import { publicEnv } from './env-public';
 import { enforce, type RateLimitName, type RateLimitResult } from './rate-limit';
 import { getAccess } from './viewer';
-import { rateMultiplier, type AccessContext } from '@/services/entitlements';
+import { rateMultiplier, type AccessContext } from './access';
 
 /**
  * Shared per-request context for API route handlers.
@@ -19,6 +19,10 @@ export interface RouteContext {
   visitorHash: string;
   ipHash: string;
   userAgent: string | null;
+  /** Raw client IP, forwarded to the API so it rate-limits the real caller. */
+  ip: string;
+  /** Bearer token to forward to the API, or null for anonymous callers. */
+  accessToken: string | null;
   /** Applies a named rate limit, scaled up for authenticated/premium users. */
   limit: (rule: RateLimitName) => Promise<RateLimitResult>;
 }
@@ -70,7 +74,7 @@ export async function routeContext(
 
   const ip = clientIp(request);
   const userAgent = request.headers.get('user-agent');
-  const access = await getAccess();
+  const [access, accessToken] = await Promise.all([getAccess(), getAccessToken()]);
 
   const visitorHash = hashVisitor(ip, userAgent);
   const identifier = access.userId ?? visitorHash;
@@ -81,6 +85,8 @@ export async function routeContext(
     visitorHash,
     ipHash: hashIp(ip),
     userAgent,
+    ip,
+    accessToken,
     limit: (rule) => enforce(rule, { identifier, multiplier }),
   };
 }

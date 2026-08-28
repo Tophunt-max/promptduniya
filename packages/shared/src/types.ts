@@ -42,6 +42,35 @@ export interface AccessTokenClaims {
   emailVerified: boolean;
   /** Session id, so a token can be tied to a revocable session. */
   sid: string;
+  /**
+   * Profile fields carried in the token so the website's BFF can build its
+   * session object without an extra round trip. They are the user's own
+   * non-sensitive data, already visible to them.
+   */
+  avatarUrl: string | null;
+  bio: string | null;
+  createdAt: number;
+}
+
+/**
+ * JSON-safe projection of the server-resolved entitlement context.
+ *
+ * `features` is an array here because a `Set` does not survive JSON; clients
+ * rehydrate it. Unlimited numeric limits are `-1`, never `Infinity`, so the
+ * value round-trips through JSON intact.
+ */
+export interface SerializedAccess {
+  userId: string | null;
+  isAuthenticated: boolean;
+  isPremium: boolean;
+  planCode: string;
+  planName: string;
+  subscriptionId: string | null;
+  subscriptionStatus: string | null;
+  subscriptionEndsAt: number | null;
+  autoRenew: boolean;
+  limits: Record<string, number>;
+  features: string[];
 }
 
 export interface AuthResult {

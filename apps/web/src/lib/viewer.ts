@@ -1,24 +1,54 @@
 import { cache } from 'react';
+import type { SerializedAccess } from '@pd/shared';
 
-import { SETTING_KEYS } from './constants';
-import { getSession } from './auth/session';
 import { ANONYMOUS_VIEWER, type ViewerSnapshot } from '@/components/viewer-provider';
+import { apiRequest } from './api-client';
+import { ANONYMOUS_ACCESS, hydrateAccess, type AccessContext } from './access';
+import { getAccessToken, getSession } from './auth/session';
 import { FEATURES } from './constants';
-import { resolveAccess, type AccessContext } from '@/services/entitlements';
-import { unreadCount } from '@/services/notifications';
-import { getBoolSetting } from '@/services/settings';
 
 /**
  * Server-side viewer resolution.
  *
- * `getAccess()` is the authorisation source of truth used by pages and route
- * handlers. `getViewerSnapshot()` is the trimmed, non-sensitive projection that
- * gets serialised into the client bundle for rendering only.
+ * `getAccess()` is the authorisation source of truth for pages and route
+ * handlers, and it is answered by the API worker — the website never derives
+ * entitlements locally, so a compromised frontend cannot grant itself premium.
+ * `getViewerSnapshot()` is the trimmed, non-sensitive projection serialised into
+ * the client bundle for rendering only.
  */
 
+interface AccessResponse {
+  access: SerializedAccess;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    username: string;
+    avatarUrl: string | null;
+    bio: string | null;
+    roles: string[];
+    isAdmin: boolean;
+    isEditor: boolean;
+    emailVerified: boolean;
+    createdAt: number;
+  } | null;
+}
+
+/**
+ * Entitlements for the current request, memoised so the many server components
+ * in one render share a single API call.
+ */
 export const getAccess = cache(async (): Promise<AccessContext> => {
-  const session = await getSession();
-  return resolveAccess(session?.user.id ?? null);
+  const token = await getAccessToken();
+  try {
+    const payload = await apiRequest<AccessResponse>('/v1/auth/access', { token });
+    return hydrateAccess(payload.access);
+  } catch (error) {
+    // Never hard-fail a page render on an entitlement lookup: degrade to guest
+    // access, which is the least-privileged outcome.
+    console.error('[viewer] access lookup failed:', error);
+    return { ...ANONYMOUS_ACCESS, features: new Set<string>() };
+  }
 });
 
 /** Convenience: can the current viewer read premium prompt bodies? */
@@ -27,18 +57,25 @@ export async function canSeePremium(): Promise<boolean> {
   return access.features.has(FEATURES.premiumPrompts);
 }
 
+interface ViewerExtras {
+  unreadNotifications: number;
+  adsEnabled: boolean;
+}
+
 export const getViewerSnapshot = cache(async (): Promise<ViewerSnapshot> => {
-  const session = await getSession();
-  const [access, adsEnabled] = await Promise.all([
+  const [session, access, extras] = await Promise.all([
+    getSession(),
     getAccess(),
-    getBoolSetting(SETTING_KEYS.adsEnabled, false),
+    viewerExtras(),
   ]);
 
   if (!session) {
-    return { ...ANONYMOUS_VIEWER, limits: { ...access.limits }, adsEnabled };
+    return {
+      ...ANONYMOUS_VIEWER,
+      limits: { ...access.limits },
+      adsEnabled: extras.adsEnabled,
+    };
   }
-
-  const unread = await unreadCount(session.user.id);
 
   return {
     isAuthenticated: true,
@@ -57,8 +94,19 @@ export const getViewerSnapshot = cache(async (): Promise<ViewerSnapshot> => {
       favorites: access.limits.favorites,
       generatorPerDay: access.limits.generatorPerDay,
     },
-    unreadNotifications: unread,
+    unreadNotifications: extras.unreadNotifications,
     // Premium members never see ads, regardless of the global toggle.
-    adsEnabled: adsEnabled && !access.isPremium,
+    adsEnabled: extras.adsEnabled && !access.isPremium,
   };
+});
+
+/** Chrome-only data (unread badge, ads toggle) — a failure must not break layout. */
+const viewerExtras = cache(async (): Promise<ViewerExtras> => {
+  const token = await getAccessToken();
+  try {
+    return await apiRequest<ViewerExtras>('/v1/viewer/extras', { token });
+  } catch (error) {
+    console.error('[viewer] extras lookup failed:', error);
+    return { unreadNotifications: 0, adsEnabled: false };
+  }
 });

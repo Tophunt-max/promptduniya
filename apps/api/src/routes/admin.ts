@@ -46,13 +46,14 @@ import {
 } from '../services/articles';
 import {
   adminListUsers,
-  adminSetUserRoles,
-  adminSetUserStatus,
+  adminUpdateUser,
+  adminUserDetail,
   listAdminLogs,
   listComments,
   listContactMessages,
   listReports,
   moderateComment,
+  pendingModerationCounts,
   resolveReport,
   setContactMessageStatus,
 } from '../services/admin';
@@ -305,28 +306,42 @@ admin.get('/users', async (c) => {
     q: p.get('q') ?? undefined,
     status: p.get('status') ?? undefined,
     role: p.get('role') ?? undefined,
+    premium: p.get('premium') === '1' || p.get('premium') === 'true',
     page: qNum(c, 'page'),
     pageSize: qNum(c, 'pageSize'),
   });
   return c.json({ ok: true, data: result });
 });
 
-admin.patch('/users/:id/status', async (c) => {
+admin.get('/users/:id', async (c) => {
+  requireAdmin(c);
+  return c.json({ ok: true, data: await adminUserDetail(c.req.param('id')) });
+});
+
+/** Single edit endpoint: status, roles and premium grants in one call. */
+admin.patch('/users/:id', async (c) => {
   const claims = requireAdmin(c);
-  const id = c.req.param('id');
-  const { status } = (await c.req.json()) as { status: 'active' | 'suspended' | 'deleted' };
-  await adminSetUserStatus(id, status);
-  await logAdminAction({ actorId: claims.sub, action: 'user.status', targetType: 'user', targetId: id, meta: { status }, ip: clientIp(c) });
+  const body = (await c.req.json()) as {
+    status?: 'active' | 'suspended';
+    roles?: string[];
+    grantPremiumDays?: number;
+    revokePremium?: boolean;
+  };
+  await adminUpdateUser({
+    actorId: claims.sub,
+    userId: c.req.param('id'),
+    status: body.status,
+    roles: Array.isArray(body.roles) ? body.roles : undefined,
+    grantPremiumDays: body.grantPremiumDays,
+    revokePremium: body.revokePremium,
+    ip: clientIp(c),
+  });
   return c.json({ ok: true, data: { updated: true } });
 });
 
-admin.patch('/users/:id/roles', async (c) => {
-  const claims = requireAdmin(c);
-  const id = c.req.param('id');
-  const { roles } = (await c.req.json()) as { roles: string[] };
-  await adminSetUserRoles(id, Array.isArray(roles) ? roles : []);
-  await logAdminAction({ actorId: claims.sub, action: 'user.roles', targetType: 'user', targetId: id, meta: { roles }, ip: clientIp(c) });
-  return c.json({ ok: true, data: { updated: true } });
+admin.get('/moderation/counts', async (c) => {
+  requireEditor(c);
+  return c.json({ ok: true, data: await pendingModerationCounts() });
 });
 
 /* ============================ Moderation ============================== */

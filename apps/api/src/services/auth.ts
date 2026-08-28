@@ -130,6 +130,8 @@ interface RefreshRecord {
   userId: string;
   tokenHash: string;
   expiresAt: number;
+  /** When this session was issued; compared against the revocation watermark. */
+  issuedAt: number;
 }
 
 async function issueSession(user: User): Promise<AuthResult & { refreshToken: string }> {
@@ -138,7 +140,12 @@ async function issueSession(user: User): Promise<AuthResult & { refreshToken: st
   const refreshToken = newToken(32);
   const expiresAt = addDays(nowSec(), config().refreshTokenDays);
 
-  const record: RefreshRecord = { userId: user.id, tokenHash: sha256(refreshToken), expiresAt };
+  const record: RefreshRecord = {
+    userId: user.id,
+    tokenHash: sha256(refreshToken),
+    expiresAt,
+    issuedAt: nowSec(),
+  };
   await useKv().sessions.put(`sess:${sid}`, JSON.stringify(record), {
     expirationTtl: config().refreshTokenDays * 86_400,
   });
@@ -153,6 +160,9 @@ async function issueSession(user: User): Promise<AuthResult & { refreshToken: st
     isEditor: roleNames.includes('admin') || roleNames.includes('editor'),
     emailVerified: user.emailVerifiedAt !== null,
     sid,
+    avatarUrl: user.avatarUrl,
+    bio: user.bio,
+    createdAt: user.createdAt,
   });
 
   return {
@@ -235,6 +245,14 @@ export async function refreshSession(refreshToken: string): Promise<AuthResult &
     throw AppError.unauthorized('Your session has expired. Please sign in again.');
   }
 
+  // A password reset (or forced sign-out) sets a revocation watermark; any
+  // session issued before it is dead even though its token is still present.
+  const watermark = Number((await kv.get(`revoked:${record.userId}`)) ?? 0);
+  if (watermark && (record.issuedAt ?? 0) <= watermark) {
+    await kv.delete(`sess:${sid}`);
+    throw AppError.unauthorized('Your session has expired. Please sign in again.');
+  }
+
   const user = await findUserById(record.userId);
   if (!user || user.status !== 'active') throw AppError.unauthorized('Session no longer valid');
 
@@ -268,4 +286,220 @@ export async function findRoleUsers(roleName: string) {
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .where(and(eq(roles.name, roleName)));
+}
+
+
+/* ==================== Email verification & password reset ================= */
+
+import { authTokens, profiles as profilesTable } from '@pd/db';
+import { isNull } from 'drizzle-orm';
+
+import { notify } from './notifications';
+import { sendPasswordResetEmail, sendVerificationEmail } from './mailer';
+
+const VERIFY_TOKEN_TTL = 86_400; // 24 hours
+const RESET_TOKEN_TTL = 3_600; // 60 minutes
+
+type TokenType = 'email_verify' | 'password_reset';
+
+/** Issues a single-use token, invalidating any outstanding ones of the same type. */
+async function issueToken(userId: string, type: TokenType, ttlSeconds: number): Promise<string> {
+  await db
+    .update(authTokens)
+    .set({ consumedAt: nowSec() })
+    .where(
+      and(
+        eq(authTokens.userId, userId),
+        eq(authTokens.type, type),
+        isNull(authTokens.consumedAt),
+      ),
+    );
+
+  const token = newToken(32);
+  await db.insert(authTokens).values({
+    id: newId(),
+    userId,
+    type,
+    tokenHash: sha256(token),
+    expiresAt: nowSec() + ttlSeconds,
+  });
+  return token;
+}
+
+/** Validates and burns a token, returning the user it belonged to. */
+async function consumeToken(token: string, type: TokenType): Promise<string> {
+  const rows = await db
+    .select({ id: authTokens.id, userId: authTokens.userId, expiresAt: authTokens.expiresAt })
+    .from(authTokens)
+    .where(
+      and(
+        eq(authTokens.tokenHash, sha256(token)),
+        eq(authTokens.type, type),
+        isNull(authTokens.consumedAt),
+      ),
+    )
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) throw AppError.badRequest('This link is invalid or has already been used');
+  if (row.expiresAt < nowSec()) {
+    throw AppError.badRequest('This link has expired. Request a new one.');
+  }
+
+  await db.update(authTokens).set({ consumedAt: nowSec() }).where(eq(authTokens.id, row.id));
+  return row.userId;
+}
+
+export async function issueVerificationEmail(user: User): Promise<void> {
+  if (user.emailVerifiedAt) return;
+  const token = await issueToken(user.id, 'email_verify', VERIFY_TOKEN_TTL);
+  const link = `${config().webOrigin}/verify-email?token=${encodeURIComponent(token)}`;
+  await sendVerificationEmail(user.email, user.name, link);
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  const userId = await consumeToken(token, 'email_verify');
+  await db
+    .update(users)
+    .set({ emailVerifiedAt: nowSec(), updatedAt: nowSec() })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Always resolves successfully, whether or not the address exists, so the
+ * endpoint cannot be used to enumerate registered emails.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const user = await findUserByEmail(email);
+  if (!user || user.status !== 'active') return;
+
+  const token = await issueToken(user.id, 'password_reset', RESET_TOKEN_TTL);
+  const link = `${config().webOrigin}/reset-password?token=${encodeURIComponent(token)}`;
+  await sendPasswordResetEmail(user.email, user.name, link);
+}
+
+/** Revokes every refresh session for a user by bumping a KV generation marker. */
+export async function revokeAllSessions(userId: string): Promise<void> {
+  // Refresh tokens live in KV keyed by session id, so there is no cheap way to
+  // enumerate a user's sessions. Instead we record a revocation watermark; any
+  // refresh issued before it is rejected on use.
+  await useKv().sessions.put(`revoked:${userId}`, String(nowSec()), {
+    expirationTtl: config().refreshTokenDays * 86_400,
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const strength = passwordStrength(newPassword);
+  if (strength.score < 2) {
+    throw AppError.badRequest(strength.problems[0] ?? 'Please choose a stronger password');
+  }
+
+  const userId = await consumeToken(token, 'password_reset');
+  const passwordHash = await hashPassword(newPassword);
+
+  await db
+    .update(users)
+    .set({ passwordHash, failedLoginCount: 0, lockedUntil: null, updatedAt: nowSec() })
+    .where(eq(users.id, userId));
+
+  // A password change invalidates every existing session.
+  await revokeAllSessions(userId);
+
+  await notify({
+    userId,
+    type: 'security',
+    title: 'Password changed',
+    body: 'Your password was updated and all other sessions were signed out.',
+    href: '/dashboard/settings',
+    force: true,
+  });
+}
+
+export async function changePassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const user = await findUserById(userId);
+  if (!user) throw AppError.notFound('Account not found');
+
+  if (user.passwordHash) {
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) throw AppError.badRequest('Your current password is incorrect');
+  }
+
+  const strength = passwordStrength(newPassword);
+  if (strength.score < 2) {
+    throw AppError.badRequest(strength.problems[0] ?? 'Please choose a stronger password');
+  }
+
+  await db
+    .update(users)
+    .set({ passwordHash: await hashPassword(newPassword), updatedAt: nowSec() })
+    .where(eq(users.id, userId));
+}
+
+export interface ProfileInput {
+  name?: string;
+  username?: string;
+  bio?: string;
+  avatarUrl?: string;
+  location?: string;
+  website?: string;
+  instagram?: string;
+  youtube?: string;
+}
+
+export async function updateProfile(userId: string, input: ProfileInput): Promise<void> {
+  if (input.username) {
+    const taken = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.username, input.username), sql`${users.id} <> ${userId}`))
+      .limit(1);
+    if (taken.length > 0) throw AppError.conflict('That username is already taken');
+  }
+
+  const userPatch: Record<string, unknown> = { updatedAt: nowSec() };
+  if (input.name !== undefined) userPatch.name = input.name;
+  if (input.username !== undefined) userPatch.username = input.username;
+  if (input.bio !== undefined) userPatch.bio = input.bio;
+  if (input.avatarUrl !== undefined) userPatch.avatarUrl = input.avatarUrl || null;
+
+  await db.update(users).set(userPatch).where(eq(users.id, userId));
+
+  const profilePatch: Record<string, unknown> = { updatedAt: nowSec() };
+  if (input.location !== undefined) profilePatch.location = input.location;
+  if (input.website !== undefined) profilePatch.website = input.website || null;
+  if (input.instagram !== undefined) profilePatch.instagram = input.instagram || null;
+  if (input.youtube !== undefined) profilePatch.youtube = input.youtube || null;
+
+  await db
+    .insert(profilesTable)
+    .values({ userId, ...profilePatch })
+    .onConflictDoUpdate({ target: profilesTable.userId, set: profilePatch });
+}
+
+/** Full profile for the account page: user row + extended profile fields. */
+export async function getProfile(userId: string) {
+  const [user, profileRows] = await Promise.all([
+    findUserById(userId),
+    db.select().from(profilesTable).where(eq(profilesTable.userId, userId)).limit(1),
+  ]);
+  if (!user) throw AppError.notFound('Account not found');
+  const profile = profileRows[0] ?? null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    username: user.username,
+    avatarUrl: user.avatarUrl,
+    bio: user.bio,
+    emailVerified: user.emailVerifiedAt !== null,
+    createdAt: user.createdAt,
+    location: profile?.location ?? null,
+    website: profile?.website ?? null,
+    instagram: profile?.instagram ?? null,
+    youtube: profile?.youtube ?? null,
+  };
 }

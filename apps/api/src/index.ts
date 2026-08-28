@@ -12,6 +12,7 @@ import generatorRoutes from './routes/generator';
 import catalogRoutes from './routes/catalog';
 import paymentRoutes from './routes/payments';
 import adminRoutes from './routes/admin';
+import viewerRoutes from './routes/viewer';
 import { clientIp } from './middleware';
 import { enforce } from './lib/rate-limit';
 import { hashIp } from './lib/crypto';
@@ -63,6 +64,7 @@ app.route('/v1/generator', generatorRoutes);
 app.route('/v1/catalog', catalogRoutes);
 app.route('/v1/payments', paymentRoutes);
 app.route('/v1/admin', adminRoutes);
+app.route('/v1/viewer', viewerRoutes);
 
 // Provider webhook — no session/CORS auth; authenticity is the HMAC signature.
 // Mounted on its own path (not under the /v1/payments sub-app) so the raw body

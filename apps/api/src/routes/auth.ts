@@ -1,9 +1,31 @@
 import { Hono } from 'hono';
 
-import { loginSchema, registerSchema } from '@pd/shared';
+import {
+  changePasswordSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+  updateProfileSchema,
+  verifyEmailSchema,
+} from '@pd/shared';
 import { AppError } from '../lib/errors';
 import { limit, requireUser, withAccess, type Vars } from '../middleware';
-import { loginUser, logout, refreshSession, registerUser } from '../services/auth';
+import {
+  changePassword,
+  findUserById,
+  getProfile,
+  issueVerificationEmail,
+  loginUser,
+  logout,
+  refreshSession,
+  registerUser,
+  requestPasswordReset,
+  resetPassword,
+  updateProfile,
+  verifyEmail,
+} from '../services/auth';
+import { serializeAccess } from '../services/entitlements';
 import { getBoolSetting } from '../services/settings';
 import { SETTING_KEYS } from '@pd/shared';
 import { config } from '../lib/env';
@@ -99,6 +121,91 @@ auth.get('/me', async (c) => {
         limits: access.limits,
         subscriptionEndsAt: access.subscriptionEndsAt,
       },
+    },
+  });
+});
+
+/* ---------------- Email verification & password recovery ---------------- */
+
+auth.post('/verify-email', async (c) => {
+  await limit(c, 'emailVerify');
+  const { token } = verifyEmailSchema.parse(await c.req.json());
+  await verifyEmail(token);
+  return c.json({ ok: true, data: { verified: true } });
+});
+
+/** Re-sends the verification email to the signed-in user. */
+auth.put('/verify-email', async (c) => {
+  const claims = requireUser(c);
+  await limit(c, 'emailVerify');
+  const user = await findUserById(claims.sub);
+  if (!user) throw AppError.notFound('Account not found');
+  await issueVerificationEmail(user);
+  return c.json({ ok: true, data: { sent: true } });
+});
+
+auth.post('/forgot-password', async (c) => {
+  await limit(c, 'passwordReset');
+  const { email } = forgotPasswordSchema.parse(await c.req.json());
+  await requestPasswordReset(email);
+  // Always the same answer, so the endpoint cannot enumerate accounts.
+  return c.json({ ok: true, data: { sent: true } });
+});
+
+auth.post('/reset-password', async (c) => {
+  await limit(c, 'passwordReset');
+  const body = resetPasswordSchema.parse(await c.req.json());
+  await resetPassword(body.token, body.password);
+  return c.json({ ok: true, data: { reset: true } });
+});
+
+/* ------------------------------- Profile -------------------------------- */
+
+auth.get('/profile', async (c) => {
+  const claims = requireUser(c);
+  return c.json({ ok: true, data: await getProfile(claims.sub) });
+});
+
+auth.patch('/profile', async (c) => {
+  const claims = requireUser(c);
+  const body = updateProfileSchema.parse(await c.req.json());
+  await updateProfile(claims.sub, body);
+  return c.json({ ok: true, data: await getProfile(claims.sub) });
+});
+
+auth.put('/password', async (c) => {
+  const claims = requireUser(c);
+  const body = changePasswordSchema.parse(await c.req.json());
+  await changePassword(claims.sub, body.currentPassword, body.newPassword);
+  return c.json({ ok: true, data: { changed: true } });
+});
+
+/**
+ * Server-resolved entitlement context. Unlike `/me` this works for anonymous
+ * callers too, because the website's SSR layer needs guest limits as well.
+ * `features` is an array and unlimited limits are -1 so the payload is JSON-safe.
+ */
+auth.get('/access', async (c) => {
+  const claims = c.get('claims');
+  return c.json({
+    ok: true,
+    data: {
+      access: serializeAccess(c.get('access')),
+      user: claims
+        ? {
+            id: claims.sub,
+            email: claims.email,
+            name: claims.name,
+            username: claims.username,
+            avatarUrl: claims.avatarUrl ?? null,
+            bio: claims.bio ?? null,
+            roles: claims.roles,
+            isAdmin: claims.isAdmin,
+            isEditor: claims.isEditor,
+            emailVerified: claims.emailVerified,
+            createdAt: claims.createdAt ?? 0,
+          }
+        : null,
     },
   });
 });

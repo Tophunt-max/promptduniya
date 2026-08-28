@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 
-import { searchQuerySchema, suggestQuerySchema } from '@pd/shared';
-import { limit, withAccess, type Vars } from '../middleware';
+import { contactSchema, reportSchema, searchQuerySchema, suggestQuerySchema } from '@pd/shared';
+import { clientIp, limit, withAccess, type Vars } from '../middleware';
+import { createReport, saveContactMessage } from '../services/admin';
 import { allCategorySlugs, featuredCategories, getCategoryBySlug, listCategories, popularTags } from '../services/categories';
 import { searchPrompts, suggest } from '../services/search';
 import { decorateViewer } from '../services/prompts';
@@ -49,6 +50,36 @@ catalog.get('/search/suggest', async (c) => {
 
 catalog.get('/plans', async (c) => {
   return c.json({ ok: true, data: { items: await listPlans({ activeOnly: true }) } });
+});
+
+/* ------------------------- Public submissions --------------------------- */
+
+/** Contact form. The honeypot field is validated by the shared schema. */
+catalog.post('/contact', async (c) => {
+  await limit(c, 'contact');
+  const body = contactSchema.parse(await c.req.json());
+  await saveContactMessage({
+    name: body.name,
+    email: body.email,
+    subject: body.subject,
+    message: body.message,
+    ip: clientIp(c),
+  });
+  return c.json({ ok: true, data: { received: true } }, 201);
+});
+
+/** Content report. Works for signed-out visitors too. */
+catalog.post('/reports', async (c) => {
+  await limit(c, 'report');
+  const body = reportSchema.parse(await c.req.json());
+  await createReport({
+    reporterId: c.get('access').userId,
+    targetType: body.targetType,
+    targetId: body.targetId,
+    reason: body.reason,
+    details: body.details,
+  });
+  return c.json({ ok: true, data: { received: true } }, 201);
 });
 
 export default catalog;

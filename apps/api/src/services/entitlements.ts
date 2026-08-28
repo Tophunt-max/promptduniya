@@ -8,7 +8,7 @@ import {
   subscriptions,
   users,
 } from '@pd/db';
-import { FEATURES, SETTING_KEYS, type FeatureKey } from '@pd/shared';
+import { FEATURES, SETTING_KEYS, type FeatureKey, type SerializedAccess } from '@pd/shared';
 import { and, count, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { AppError } from '../lib/errors';
@@ -36,9 +36,28 @@ export interface AccessContext {
   planCode: string;
   planName: string;
   subscriptionId: string | null;
+  subscriptionStatus: string | null;
   subscriptionEndsAt: number | null;
+  autoRenew: boolean;
   limits: PlanLimits;
   features: Set<string>;
+}
+
+/** JSON-safe projection sent to the website/admin over HTTP. */
+export function serializeAccess(access: AccessContext): SerializedAccess {
+  return {
+    userId: access.userId,
+    isAuthenticated: access.isAuthenticated,
+    isPremium: access.isPremium,
+    planCode: access.planCode,
+    planName: access.planName,
+    subscriptionId: access.subscriptionId,
+    subscriptionStatus: access.subscriptionStatus,
+    subscriptionEndsAt: access.subscriptionEndsAt,
+    autoRenew: access.autoRenew,
+    limits: { ...access.limits },
+    features: [...access.features],
+  };
 }
 
 const ACTIVE_STATUSES = ['active', 'past_due'] as const;
@@ -61,6 +80,7 @@ export async function getActiveSubscription(userId: string) {
       planCode: plans.code,
       planName: plans.name,
       planLimits: plans.limitsJson,
+      autoRenew: subscriptions.autoRenew,
     })
     .from(subscriptions)
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
@@ -157,7 +177,9 @@ export async function resolveAccess(userId: string | null): Promise<AccessContex
       planCode: 'anonymous',
       planName: 'Guest',
       subscriptionId: null,
+      subscriptionStatus: null,
       subscriptionEndsAt: null,
+      autoRenew: false,
       limits: await anonLimits(),
       features: new Set(),
     };
@@ -202,7 +224,9 @@ export async function resolveAccess(userId: string | null): Promise<AccessContex
     planCode: subscription?.planCode ?? 'free',
     planName: subscription?.planName ?? 'Free',
     subscriptionId: subscription?.id ?? null,
+    subscriptionStatus: subscription?.status ?? null,
     subscriptionEndsAt: subscription?.endDate ?? null,
+    autoRenew: subscription?.autoRenew ?? false,
     limits,
     features,
   };

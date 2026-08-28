@@ -17,10 +17,18 @@ const boolish = (fallback: boolean) =>
 const serverSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
+  /**
+   * Base URL of the promptduniya API worker. Used by the HTTP transport; when
+   * a Cloudflare service binding is present the host is ignored but the value
+   * must still be a valid absolute URL.
+   */
+  API_BASE_URL: z.string().url().default('http://127.0.0.1:8787'),
+
   DATABASE_URL: z.string().min(1).default('file:./data/promptduniya.db'),
   DATABASE_AUTH_TOKEN: z.string().optional(),
 
   AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 characters'),
+  /** Lifetime of the refresh cookie; must match the API's REFRESH_TOKEN_DAYS. */
   AUTH_SESSION_DAYS: z.coerce.number().int().positive().max(365).default(30),
   AUTH_BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
 
