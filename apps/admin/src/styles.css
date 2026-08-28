@@ -1,0 +1,42 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-50: #f2f0ff;
+  --color-brand-100: #e6e2ff;
+  --color-brand-200: #cdc6ff;
+  --color-brand-300: #ab9dff;
+  --color-brand-400: #8a72fb;
+  --color-brand-500: #6f4ff7;
+  --color-brand-600: #5b3df5;
+  --color-brand-700: #4a2fd6;
+  --color-brand-800: #3c28ab;
+  --color-brand-900: #2f2185;
+
+  --color-ink: #1a1626;
+  --color-body: #4d4760;
+  --color-muted: #6f6880;
+  --color-line: #eceaf4;
+  --color-surface: #ffffff;
+  --color-canvas: #f7f6fb;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible keyboard focus everywhere — this is an internal tool used heavily
+     with the keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+}
