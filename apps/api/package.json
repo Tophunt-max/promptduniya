@@ -12,7 +12,11 @@
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply promptduniya --local",
     "db:migrate:remote": "wrangler d1 migrations apply promptduniya --remote",
-    "db:seed:local": "wrangler d1 execute promptduniya --local --file=./seed/seed.sql"
+    "db:seed:generate": "tsx scripts/generate-seed-sql.ts",
+    "db:seed:local": "npm run db:seed:generate && wrangler d1 execute promptduniya --local --file=./seed/seed.sql",
+    "db:seed:remote": "npm run db:seed:generate && wrangler d1 execute promptduniya --remote --file=./seed/seed.sql",
+    "db:setup:local": "npm run db:migrate:local && npm run db:seed:local",
+    "db:setup:remote": "npm run db:migrate:remote && npm run db:seed:remote"
   },
   "dependencies": {
     "@pd/db": "*",
@@ -26,6 +30,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260828.1",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^4.1.0",
     "wrangler": "^4.127.0"

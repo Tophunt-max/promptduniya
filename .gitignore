@@ -28,6 +28,9 @@ worker-configuration.d.ts
 .dev.vars.*
 !.dev.vars.example
 
+# generated from the TypeScript seed data — regenerate with db:seed:generate
+apps/api/seed/seed.sql
+
 # local databases
 data/
 *.db

@@ -20,12 +20,19 @@
     "dev:web": "npm run dev --workspace apps/web",
     "dev:admin": "npm run dev --workspace apps/admin",
     "build:admin": "npm run build --workspace apps/admin",
+    "provision": "node scripts/provision.mjs",
+    "provision:dry-run": "node scripts/provision.mjs --dry-run",
     "deploy:api": "npm run deploy --workspace apps/api",
+    "deploy:web": "npm run deploy --workspace apps/web",
     "deploy:admin": "npm run deploy --workspace apps/admin",
     "db:generate": "npm run db:generate --workspace packages/db",
     "db:migrate:local": "npm run db:migrate:local --workspace apps/api",
     "db:migrate:remote": "npm run db:migrate:remote --workspace apps/api",
-    "db:seed:local": "npm run db:seed:local --workspace apps/api"
+    "db:seed:generate": "npm run db:seed:generate --workspace apps/api",
+    "db:seed:local": "npm run db:seed:local --workspace apps/api",
+    "db:seed:remote": "npm run db:seed:remote --workspace apps/api",
+    "db:setup:local": "npm run db:setup:local --workspace apps/api",
+    "db:setup:remote": "npm run db:setup:remote --workspace apps/api"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

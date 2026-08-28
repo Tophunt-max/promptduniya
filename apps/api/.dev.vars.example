@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# promptduniya — API worker
+#
+# Copy to `.dev.vars` (gitignored) for local `wrangler dev`.
+# In production these are set as encrypted secrets instead:
+#   wrangler secret put <NAME>
+#
+# Non-secret configuration (origins, provider selection, R2 public URL) lives in
+# the `vars` block of wrangler.jsonc, not here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Signs the JWT access tokens. MUST be byte-identical to the website's
+# AUTH_SECRET, because the website verifies token signatures locally.
+# Generate with: openssl rand -base64 48
+AUTH_SECRET=replace-me-with-at-least-16-characters
+
+# Authorises POST /v1/cron/maintenance. Must match the website's CRON_SECRET.
+CRON_SECRET=
+
+# Access-token lifetime in minutes, and refresh-token lifetime in days.
+# REFRESH_TOKEN_DAYS should match the website's AUTH_SESSION_DAYS.
+ACCESS_TOKEN_MINUTES=15
+REFRESH_TOKEN_DAYS=30
+AUTH_BCRYPT_ROUNDS=10
+
+# ---- Razorpay ----
+# Leave PAYMENTS_MOCK_MODE=true (wrangler.jsonc) until real keys are set; the
+# mock provider still exercises signature verification and idempotency.
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+
+# ---- AI generator ----
+# AI_PROVIDER is set in wrangler.jsonc (template | gemini | openai).
+# The template engine needs no key and is the default.
+AI_API_KEY=
+
+# ---- Email ----
+# EMAIL_PROVIDER is set in wrangler.jsonc (console | resend).
+# `console` prints messages to the Worker log and needs no key.
+RESEND_API_KEY=
+
+# ---- Seed data (only read by db:seed:generate) ----
+SEED_ADMIN_EMAIL=admin@promptduniya.in
+SEED_ADMIN_PASSWORD=ChangeMe!Admin123
+SEED_ADMIN_NAME=Duniya Admin
+SEED_DEMO_PASSWORD=ChangeMe!Demo123
