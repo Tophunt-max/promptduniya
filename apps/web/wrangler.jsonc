@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "promptduniya-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-12-30",
+  // Required by the OpenNext runtime (Node APIs) and by `jose`.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  // ---- Service binding to the API worker ----
+  // SSR and route handlers reach the API through this binding, so requests stay
+  // inside Cloudflare's network: no public hop, no TLS handshake, no egress.
+  // The website has NO D1, KV-data or R2 binding of its own by design — all data
+  // access is mediated by the API, which re-authorises every request.
+  "services": [
+    { "binding": "API", "service": "promptduniya-api" },
+    // Self-reference, required by OpenNext to trigger cache revalidation.
+    { "binding": "WORKER_SELF_REFERENCE", "service": "promptduniya-web" }
+  ],
+
+  // ---- Next.js incremental cache (ISR / revalidate) ----
+  "kv_namespaces": [
+    { "binding": "NEXT_INC_CACHE_KV", "id": "REPLACE_WITH_KV_ID" }
+  ],
+
+  // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----
+  "vars": {
+    "NEXTJS_ENV": "production",
+    "NODE_ENV": "production",
+    // Fallback for the HTTP transport. Unused while the service binding is
+    // present, but must still be a valid absolute URL.
+    "API_BASE_URL": "https://api.promptduniya.in",
+    "PRIMARY_DOMAIN": "promptduniya.in",
+    "AUTH_SESSION_DAYS": "30",
+    "MAINTENANCE_MODE": "false"
+  }
+
+  // Secrets to set with `wrangler secret put <NAME>`:
+  //   AUTH_SECRET  — must be byte-identical to the API's AUTH_SECRET
+  //   CRON_SECRET  — must match the API's CRON_SECRET
+}

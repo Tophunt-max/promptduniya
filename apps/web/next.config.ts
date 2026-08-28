@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 import type { NextConfig } from 'next';
 
 /**
@@ -64,5 +65,12 @@ const nextConfig: NextConfig = {
     ];
   },
 };
+
+/**
+ * Gives `next dev` access to the local Cloudflare bindings declared in
+ * `wrangler.jsonc` — notably the `API` service binding — so local development
+ * exercises the same transport as production.
+ */
+void initOpenNextCloudflareForDev();
 
 export default nextConfig;

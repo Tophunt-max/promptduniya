@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { config } from './env';
 
@@ -45,7 +45,7 @@ export function newId(prefix?: string): string {
     timePart = ALPHABET[t % 32] + timePart;
     t = Math.floor(t / 32);
   }
-  const bytes = randomBytes(10);
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
   let randomPart = '';
   for (let i = 0; i < 16; i++) {
     randomPart += ALPHABET[bytes[Math.floor((i * 10) / 16)]! % 32];
@@ -54,14 +54,36 @@ export function newId(prefix?: string): string {
   return prefix ? `${prefix}_${id}` : id;
 }
 
+const BASE64URL_UNSAFE = /[+/=]/g;
+const BASE64URL_REPLACEMENTS: Record<string, string> = { '+': '-', '/': '_', '=': '' };
+
+/** Base64url encoding without relying on Node's Buffer. */
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(BASE64URL_UNSAFE, (char) => BASE64URL_REPLACEMENTS[char]!);
+}
+
+function toHex(bytes: Uint8Array): string {
+  let hex = '';
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, '0');
+  return hex;
+}
+
+/** Cryptographically random bytes from the Workers Web Crypto implementation. */
+function randomBytesOf(length: number): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(length));
+}
+
+/** URL-safe opaque token — used for refresh, verification and reset tokens. */
 export function newToken(bytes = 32): string {
-  return randomBytes(bytes).toString('base64url');
+  return toBase64Url(randomBytesOf(bytes));
 }
 
 export function newReference(prefix = 'PD'): string {
-  return `${prefix}-${randomBytes(4).toString('hex').toUpperCase()}`;
+  return `${prefix}-${toHex(randomBytesOf(4)).toUpperCase()}`;
 }
 
 export function newUuid(): string {
-  return randomUUID();
+  return crypto.randomUUID();
 }

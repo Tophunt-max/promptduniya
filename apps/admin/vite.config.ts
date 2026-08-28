@@ -16,7 +16,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // No source maps in the deployed bundle: it keeps the upload small and
+    // avoids publishing readable source for an internal console.
+    sourcemap: false,
     // The admin bundle is behind a login and only used by a handful of people,
     // so a slightly larger single chunk is preferable to aggressive splitting.
     chunkSizeWarningLimit: 900,
