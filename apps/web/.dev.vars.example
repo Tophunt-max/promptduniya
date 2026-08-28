@@ -1,0 +1,11 @@
+# Local Workers-runtime variables, read by `wrangler dev` / `opennextjs-cloudflare preview`.
+# Copy to `.dev.vars` (gitignored). For plain `next dev`, use `.env` instead.
+
+# Which Next.js .env file set to load. Defaults to "production" when unset.
+NEXTJS_ENV=development
+
+# Must be byte-identical to the API's AUTH_SECRET.
+AUTH_SECRET=replace-me-with-at-least-16-characters
+
+# Must match the API's CRON_SECRET.
+CRON_SECRET=

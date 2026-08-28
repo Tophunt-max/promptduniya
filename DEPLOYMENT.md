@@ -1,386 +1,340 @@
-# Deployment guide
+# Deployment
 
-How to take promptduniya from a local checkout to a production deployment on your own domain.
+Taking promptduniya from a checkout to production on Cloudflare, on your own domain.
 
-The reference stack is **Vercel + Turso + Cloudflare R2 + Razorpay + Resend**. Every piece is swappable; the seams are documented below.
+Everything runs on Cloudflare: three Workers, D1, KV and R2. The only external services are Razorpay (payments), and optionally an AI provider and Resend (email) — both of which have working no-key fallbacks.
 
 ---
 
-## Table of contents
-
 1. [Before you start](#before-you-start)
-2. [Step 1 — Database (Turso)](#step-1--database-turso)
-3. [Step 2 — Generate secrets](#step-2--generate-secrets)
-4. [Step 3 — Deploy to Vercel](#step-3--deploy-to-vercel)
-5. [Step 4 — Run migrations and seed](#step-4--run-migrations-and-seed)
-6. [Step 5 — Custom domain](#step-5--custom-domain)
+2. [Step 1 — Provision the resources](#step-1--provision-the-resources)
+3. [Step 2 — Secrets](#step-2--secrets)
+4. [Step 3 — Schema and catalogue](#step-3--schema-and-catalogue)
+5. [Step 4 — Deploy](#step-4--deploy)
+6. [Step 5 — Custom domains](#step-5--custom-domains)
 7. [Step 6 — Razorpay](#step-6--razorpay)
-8. [Step 7 — Object storage (R2)](#step-7--object-storage-r2)
-9. [Step 8 — Transactional email](#step-8--transactional-email)
-10. [Step 9 — Scheduled jobs](#step-9--scheduled-jobs)
-11. [Step 10 — Admin setup](#step-10--admin-setup)
-12. [Rate limiting at scale](#rate-limiting-at-scale)
-13. [Alternative platforms](#alternative-platforms)
+8. [Step 7 — Media on R2](#step-7--media-on-r2)
+9. [Step 8 — Email](#step-8--email)
+10. [Step 9 — The nightly job](#step-9--the-nightly-job)
+11. [Step 10 — First admin login](#step-10--first-admin-login)
+12. [Local development](#local-development)
+13. [Updating a live deployment](#updating-a-live-deployment)
 14. [Pre-launch checklist](#pre-launch-checklist)
-15. [Post-launch monitoring](#post-launch-monitoring)
-16. [Troubleshooting](#troubleshooting)
-17. [Rollback](#rollback)
+15. [Troubleshooting](#troubleshooting)
+16. [Rollback](#rollback)
 
 ---
 
 ## Before you start
 
-Verify the build passes locally. This is the same gate CI should enforce:
+You need:
+
+- Node.js 20 or newer
+- A Cloudflare account with Workers Paid ($5/mo) — required for **service bindings**, **cron triggers** and R2
+- A domain on Cloudflare DNS
+- `npx wrangler login` completed
 
 ```bash
-npm run verify   # typecheck → lint → test → build
+git clone https://github.com/Tophunt-max/promptduniya.git
+cd promptduniya
+npm install
+npx wrangler login
 ```
 
-All four must pass. Do not deploy a failing build.
+Three Workers get deployed:
 
-You will need accounts for: a host (Vercel), a database (Turso), and — only if you are charging money — Razorpay with completed KYC.
+| Worker | Serves | Contains |
+| --- | --- | --- |
+| `promptduniya-api` | `api.yourdomain` | All business logic; owns D1, KV, R2 |
+| `promptduniya-web` | `yourdomain` | Public website (Next.js via OpenNext) |
+| `promptduniya-admin` | `admin.yourdomain` | Admin console (static SPA) |
 
 ---
 
-## Step 1 — Database (Turso)
-
-Local development uses a SQLite file. Production needs a hosted libSQL server so multiple instances share one database.
+## Step 1 — Provision the resources
 
 ```bash
-curl -sSfL https://get.tur.so/install.sh | bash
-turso auth signup
-
-turso db create promptduniya --location bom   # bom = Mumbai
-turso db show promptduniya --url              # → libsql://promptduniya-xxx.turso.io
-turso db tokens create promptduniya           # → your auth token
+npm run provision:dry-run   # review what it will do
+npm run provision
 ```
 
-Choose a region close to your users. `bom` (Mumbai) is the right default for an India-focused product — it keeps query latency low for the majority of traffic.
+This creates the D1 database, four KV namespaces and the R2 bucket, then writes the returned ids into `apps/api/wrangler.jsonc` and `apps/web/wrangler.jsonc`.
 
-Keep both values for the next step.
+Doing this by hand is the easiest step to get wrong: `apps/api/wrangler.jsonc` contains three identical `REPLACE_WITH_KV_ID` placeholders, and swapping two of them produces a system that works until sessions or rate limits behave strangely. The script matches each binding by name, so the ids cannot be transposed. It is safe to re-run — existing resources are detected and their ids read back.
+
+Commit the resulting config changes; the ids are not secrets.
+
+<details>
+<summary>Doing it manually</summary>
+
+```bash
+cd apps/api
+wrangler d1 create promptduniya
+wrangler kv namespace create promptduniya-rate-limit
+wrangler kv namespace create promptduniya-sessions
+wrangler kv namespace create promptduniya-cache
+wrangler kv namespace create promptduniya-next-cache
+wrangler r2 bucket create promptduniya-media
+```
+
+Then paste: the D1 id into `database_id`; the first three KV ids into the `RATE_LIMIT`, `SESSIONS` and `CACHE` entries of `apps/api/wrangler.jsonc`; and the fourth into `NEXT_INC_CACHE_KV` in `apps/web/wrangler.jsonc`.
+</details>
 
 ---
 
-## Step 2 — Generate secrets
+## Step 2 — Secrets
+
+Generate one signing key and use it for **both** the API and the website:
 
 ```bash
-openssl rand -base64 48
+openssl rand -base64 48    # AUTH_SECRET
+openssl rand -base64 32    # CRON_SECRET
 ```
 
-This becomes `AUTH_SECRET`. It signs sessions, keys the visitor hashes used for privacy-preserving analytics, and authenticates the cron endpoint.
+`AUTH_SECRET` must be byte-identical in both Workers. The website verifies the API's JWT signatures locally to avoid a network call per request; if the keys differ, every visitor is treated as signed out.
 
-Rules:
-- Generate a **new** value for production. Never reuse a development secret.
-- Changing it later signs out every user and invalidates pending verification links.
-- Store it in your host's secret manager, never in the repository.
+**API:**
+
+```bash
+cd apps/api
+wrangler secret put AUTH_SECRET
+wrangler secret put CRON_SECRET
+wrangler secret put RAZORPAY_KEY_ID
+wrangler secret put RAZORPAY_KEY_SECRET
+wrangler secret put RAZORPAY_WEBHOOK_SECRET
+wrangler secret put AI_API_KEY          # optional
+wrangler secret put RESEND_API_KEY      # optional
+```
+
+**Website:**
+
+```bash
+cd ../web
+wrangler secret put AUTH_SECRET         # the same value
+wrangler secret put CRON_SECRET         # the same value
+```
+
+The admin console takes no secrets. Its only configuration is `VITE_API_BASE_URL`, inlined at build time.
+
+Non-secret settings live in the `vars` blocks of the wrangler configs. Update these in `apps/api/wrangler.jsonc` before deploying:
+
+```jsonc
+"WEB_ORIGIN":   "https://yourdomain",
+"ADMIN_ORIGIN": "https://admin.yourdomain",
+"R2_PUBLIC_URL": "https://media.yourdomain"
+```
+
+`WEB_ORIGIN` and `ADMIN_ORIGIN` are the CORS allow-list. The admin console cannot log in until `ADMIN_ORIGIN` matches its real origin exactly, because the refresh cookie is `SameSite=None` and needs credentialed CORS.
+
+In `apps/web/wrangler.jsonc`, set `API_BASE_URL` and `PRIMARY_DOMAIN`. `API_BASE_URL` is only a fallback — the service binding is used in practice — but it must still be a valid absolute URL.
 
 ---
 
-## Step 3 — Deploy to Vercel
+## Step 3 — Schema and catalogue
 
 ```bash
-npm i -g vercel
-vercel login
-vercel          # link the project, accept the detected Next.js settings
+npm run db:setup:remote
 ```
 
-Then add environment variables in **Project → Settings → Environment Variables** (Production scope):
+That runs the D1 migrations and then applies the seed. The seed is compiled from the TypeScript catalogue in `apps/api/scripts/seed/` into `apps/api/seed/seed.sql`, because D1 only accepts a SQL file.
 
-| Variable | Value |
+It ships 26 categories, 30 prompts, 44 tags, 4 plans, 3 articles and four demo accounts. Every statement is an upsert keyed on a natural key, so re-running converges instead of duplicating. Two deliberate exceptions use `DO NOTHING`: **site settings** and **user rows** — a re-seed must never overwrite settings you changed in the admin panel or reset a password.
+
+Set the seed passwords first, or the defaults are used:
+
+```bash
+# apps/api/.dev.vars — only read by the generator, never deployed
+SEED_ADMIN_EMAIL=you@yourdomain
+SEED_ADMIN_PASSWORD=<a strong password>
+SEED_DEMO_PASSWORD=<another>
+```
+
+To skip the demo content and start empty, run `npm run db:migrate:remote` alone.
+
+---
+
+## Step 4 — Deploy
+
+Order matters. The website declares a service binding to `promptduniya-api`, and that binding cannot resolve until the API exists.
+
+```bash
+npm run deploy:api
+npm run deploy:web
+npm run deploy:admin
+```
+
+Verify the API before moving on:
+
+```bash
+curl https://promptduniya-api.<your-subdomain>.workers.dev/health
+# {"ok":true,"data":{"status":"healthy","ts":...}}
+```
+
+`deploy:web` runs `opennextjs-cloudflare build` first, which runs `next build`. **Keep the API reachable during that build**: `generateStaticParams` fetches the prompt and article slugs to pre-render. Failures are caught so the build never breaks, but the pre-render list comes back empty and those pages fall back to on-demand rendering.
+
+For `deploy:admin`, point the SPA at the API first:
+
+```bash
+cd apps/admin
+echo 'VITE_API_BASE_URL=https://api.yourdomain' > .env.production
+npm run build && npm run deploy
+```
+
+---
+
+## Step 5 — Custom domains
+
+In the Cloudflare dashboard, under each Worker → **Settings → Domains & Routes → Add custom domain**:
+
+| Worker | Domain |
 | --- | --- |
-| `AUTH_SECRET` | From step 2 |
-| `DATABASE_URL` | `libsql://promptduniya-xxx.turso.io` |
-| `DATABASE_AUTH_TOKEN` | From step 1 |
-| `NEXT_PUBLIC_SITE_URL` | `https://yourdomain.in` — no trailing slash |
-| `NEXT_PUBLIC_SITE_NAME` | `promptduniya` |
-| `NEXT_PUBLIC_SITE_TAGLINE` | `Create Better. Imagine More.` |
-| `PRIMARY_DOMAIN` | `yourdomain.in` |
-| `NODE_ENV` | `production` |
-| `PAYMENTS_MOCK_MODE` | `true` for now — flip to `false` in step 6 |
-| `SEED_ADMIN_EMAIL` | Your real admin email |
-| `SEED_ADMIN_PASSWORD` | A strong password you generate |
+| `promptduniya-web` | `yourdomain` and `www.yourdomain` |
+| `promptduniya-api` | `api.yourdomain` |
+| `promptduniya-admin` | `admin.yourdomain` |
 
-`NEXT_PUBLIC_SITE_URL` must be exact. It drives canonical URLs, Open Graph tags, email links and the CSRF origin check. A trailing slash or a wrong protocol will cause subtle breakage.
+For R2 media, open the bucket → **Settings → Public access → Connect custom domain** → `media.yourdomain`.
 
----
+Then reconcile the config with reality:
 
-## Step 4 — Run migrations and seed
+- `apps/api/wrangler.jsonc` → `WEB_ORIGIN`, `ADMIN_ORIGIN`, `R2_PUBLIC_URL`
+- `apps/web/wrangler.jsonc` → `API_BASE_URL`, `PRIMARY_DOMAIN`, and `NEXT_PUBLIC_SITE_URL` in `apps/web/.env.production`
+- `apps/admin/public/_headers` → the `connect-src` in the CSP must list `https://api.yourdomain`, otherwise the browser blocks every admin request
+- `apps/admin/.env.production` → `VITE_API_BASE_URL`
 
-Migrations run from your machine against the production database:
-
-```bash
-export DATABASE_URL="libsql://promptduniya-xxx.turso.io"
-export DATABASE_AUTH_TOKEN="your-token"
-export AUTH_SECRET="the-same-secret-as-production"
-export SEED_ADMIN_EMAIL="you@yourdomain.in"
-export SEED_ADMIN_PASSWORD="a-strong-password"
-
-npm run db:migrate
-npm run db:seed
-```
-
-`AUTH_SECRET` must match production, because the seeder hashes the admin password with it in scope.
-
-The seeder is idempotent — safe to re-run after adding prompts or categories. It updates existing rows rather than duplicating them, and it will not overwrite settings you have changed in the admin panel.
-
-**If you do not want the demo accounts in production**, remove them afterwards:
-
-```bash
-turso db shell promptduniya \
-  "delete from users where email_normalized in
-   ('editor@promptduniya.in','free@promptduniya.in','premium@promptduniya.in');"
-```
-
-Then deploy:
-
-```bash
-vercel --prod
-```
-
----
-
-## Step 5 — Custom domain
-
-1. In Vercel: **Project → Settings → Domains → Add** → `yourdomain.in`.
-2. At your registrar, add the DNS records Vercel shows (an `A` record for the apex, `CNAME` for `www`).
-3. Wait for propagation. TLS is provisioned automatically.
-4. Update `NEXT_PUBLIC_SITE_URL` and `PRIMARY_DOMAIN` to the live domain and redeploy.
-
-HSTS is already set with a two-year max-age and `preload`. Only submit to the [HSTS preload list](https://hstspreload.org) once you are certain you will never need plain HTTP on this domain.
+Redeploy all three afterwards.
 
 ---
 
 ## Step 6 — Razorpay
 
-Skip this if you are not charging money yet — the platform runs fine with `PAYMENTS_MOCK_MODE=true`.
+1. Create a Razorpay account and complete KYC (required for live keys).
+2. Copy the Key ID and Key Secret from **Settings → API Keys**.
+3. Add a webhook at **Settings → Webhooks**:
+   - URL: `https://api.yourdomain/v1/webhooks/razorpay`
+   - Events: `payment.captured`, `payment.failed`, `refund.processed`, `subscription.charged`, `subscription.cancelled`
+   - Copy the signing secret.
+4. Store all three as API secrets (Step 2), then flip `"PAYMENTS_MOCK_MODE": "false"` in `apps/api/wrangler.jsonc` and redeploy.
 
-### Get your keys
+While `PAYMENTS_MOCK_MODE` is `true`, `POST /v1/payments/mock-complete` simulates a purchase. It is not a shortcut: it generates a genuinely signed payload and runs it through the same `verifyCheckout` path as production, so the signature check, amount cross-check and idempotency logic are all exercised. It refuses to run once real credentials are configured.
 
-1. Sign up at [razorpay.com](https://razorpay.com) and complete KYC (needs PAN, bank account and business documents; approval typically takes 2–3 working days).
-2. **Settings → API Keys → Generate Live Key.** The secret is shown once — store it immediately.
-
-### Configure the webhook
-
-**Settings → Webhooks → Add New Webhook**
-
-- **URL:** `https://yourdomain.in/api/payments/webhook`
-- **Secret:** generate a strong random string; you will set it as `RAZORPAY_WEBHOOK_SECRET`
-- **Active events:**
-  - `payment.captured`
-  - `payment.authorized`
-  - `payment.failed`
-  - `refund.created`
-  - `refund.processed`
-  - `subscription.cancelled`
-  - `subscription.halted`
-
-### Set the environment variables
-
-```bash
-PAYMENTS_MOCK_MODE=false
-RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxx
-NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxx
-RAZORPAY_KEY_SECRET=your_key_secret
-RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
-PAYMENTS_CURRENCY=INR
-```
-
-`RAZORPAY_KEY_ID` and `NEXT_PUBLIC_RAZORPAY_KEY_ID` hold the same value. The key id is public by design (Checkout needs it in the browser); the **secret must never** be given a `NEXT_PUBLIC_` prefix.
-
-Redeploy after setting these.
-
-### Set prices
-
-Go to `/admin/plans` and set real prices. Seeded defaults are ₹99 monthly, ₹699 yearly and ₹1,999 lifetime — treat them as placeholders and price for your own market.
-
-The database is the only source of truth for price. The server reads it at order creation and ignores anything the browser sends.
-
-### Verify before opening up
-
-1. Create a temporary ₹1 plan at `/admin/plans`.
-2. Buy it with a real payment method.
-3. Confirm at `/admin/payments` that the payment shows `captured` and the webhook shows a **valid** signature and `Handled` status.
-4. Confirm the account shows premium at `/admin/users`.
-5. Refund it from the Razorpay dashboard, then confirm the webhook revoked access.
-6. Deactivate the ₹1 plan.
-
-Do not skip step 5 — a working refund path is what turns a chargeback into a support ticket.
+The webhook route is mounted outside the CORS and auth middleware; its authenticity comes from the HMAC signature alone. Deliveries are recorded in `payment_events` with a unique `(provider, event_key)`, so a replayed delivery is a no-op — visible in the admin console under **Billing → Webhook log**.
 
 ---
 
-## Step 7 — Object storage (R2)
+## Step 7 — Media on R2
 
-Without this, uploads go to `public/uploads`, which does not survive a redeploy on a serverless host. Configure it before uploading real cover images.
+The bucket is created in Step 1 and bound to the API as `MEDIA`. Uploads go through `POST /v1/admin/upload`, which validates the size cap (8 MB), the MIME allow-list, and the file's **magic bytes** — a renamed executable is rejected even if it claims to be a PNG.
 
-```bash
-# Cloudflare dashboard → R2 → Create bucket → "promptduniya-media"
-# → Manage R2 API Tokens → Create (Object Read & Write)
-# → Bucket → Settings → Public access → enable, note the r2.dev URL
-```
+The website never holds bucket credentials. It streams the multipart body to the API, which performs the write.
 
-```bash
-R2_ACCOUNT_ID=your_cloudflare_account_id
-R2_ACCESS_KEY_ID=your_access_key
-R2_SECRET_ACCESS_KEY=your_secret_key
-R2_BUCKET=promptduniya-media
-R2_PUBLIC_URL=https://pub-xxxxxxxx.r2.dev
-```
-
-For a custom media domain, connect one in R2 bucket settings and use it as `R2_PUBLIC_URL`. If you use a hostname other than `*.r2.dev`, add it to `images.remotePatterns` in `next.config.ts` so `next/image` will optimise it.
-
-Any S3-compatible provider works — the adapter signs requests with SigV4 directly. Only `R2_ACCOUNT_ID` is Cloudflare-specific (it forms the endpoint hostname).
-
-Verify by uploading an image at `/admin/media` and confirming the returned URL is on your R2 domain.
+After connecting `media.yourdomain`, set `R2_PUBLIC_URL` to it and redeploy the API. `apps/web/next.config.ts` already allow-lists `media.promptduniya.in` under `images.remotePatterns` — change that to your own host or `next/image` will refuse to optimise your media.
 
 ---
 
-## Step 8 — Transactional email
+## Step 8 — Email
 
-Without this, verification and reset links are written to the server log — workable for a soft launch, unworkable for real users.
+`EMAIL_PROVIDER` in `apps/api/wrangler.jsonc` selects the adapter:
 
-**Resend** is implemented and needs no extra dependency:
+- `console` (default) — writes the message to the Worker log. Verification and reset links are fully usable; `wrangler tail` to read them. No account needed.
+- `resend` — set `RESEND_API_KEY` as a secret and `EMAIL_FROM` in `vars`. Verify your sending domain in Resend first, or delivery fails silently.
 
-```bash
-EMAIL_PROVIDER=resend
-RESEND_API_KEY=re_xxxxxxxxxxxx
-EMAIL_FROM="promptduniya <no-reply@yourdomain.in>"
-```
-
-Verify your sending domain in Resend and add the DKIM/SPF records they provide, or your mail will land in spam.
-
-> `EMAIL_PROVIDER=smtp` currently falls back to console logging. Adding a mail transport is a deployment choice — install Nodemailer and implement `SmtpAdapter` in `src/services/mailer.ts` if you prefer SMTP. The `EmailAdapter` interface is the only thing you need to satisfy.
-
-Test by registering a new account and confirming the verification email arrives.
+Called over `fetch`, so no SDK is bundled.
 
 ---
 
-## Step 9 — Scheduled jobs
+## Step 9 — The nightly job
 
-`/api/cron/maintenance` publishes scheduled prompts, recomputes trending scores, expires due subscriptions and sends expiry reminders. Without it, trending never updates and expired subscriptions keep their entitlements until someone triggers a sweep.
+`apps/api/wrangler.jsonc` declares `"crons": ["30 19 * * *"]` — 19:30 UTC, which is 01:00 IST. It runs on deploy with no extra setup, and performs four jobs: publish scheduled prompts, recompute trending scores, expire lapsed subscriptions, and warn members whose plan ends within five days.
 
-Add `vercel.json` at the repository root:
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/maintenance",
-      "schedule": "0 * * * *"
-    }
-  ]
-}
-```
-
-Vercel Cron sends a `GET` without an `Authorization` header, so also set:
+To run it on demand:
 
 ```bash
-CRON_SECRET=<the same value as AUTH_SECRET>
+curl -X POST https://api.yourdomain/v1/cron/maintenance \
+  -H "x-cron-secret: $CRON_SECRET"
 ```
 
-Vercel forwards `CRON_SECRET` as a bearer token automatically. On other platforms, call it yourself:
-
-```bash
-# crontab -e — hourly
-0 * * * * curl -fsS -X POST https://yourdomain.in/api/cron/maintenance \
-  -H "Authorization: Bearer $AUTH_SECRET" > /dev/null
-```
-
-The endpoint mutates subscription state, so it is authenticated with a constant-time comparison against `AUTH_SECRET`. Never expose it unauthenticated.
-
-Verify manually once:
-
-```bash
-curl -X POST https://yourdomain.in/api/cron/maintenance \
-  -H "Authorization: Bearer $AUTH_SECRET"
-```
-
-You should get a JSON summary of counts.
+Confirm it is registered under the Worker → **Settings → Trigger Events**.
 
 ---
 
-## Step 10 — Admin setup
+## Step 10 — First admin login
 
-1. Sign in at `/login` with `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
-2. **Change the password immediately** at `/dashboard/settings`.
-3. Work through `/admin/settings`:
-   - Site name, tagline, primary domain, logo
-   - SEO title template and default meta description
-   - Free and guest daily limits
-   - Contact email and social links
-   - Confirm "Accept payments" is on and maintenance mode is off
-4. Set real prices at `/admin/plans`.
-5. Review the seeded prompts at `/admin/prompts` — keep, edit or unpublish them as you see fit.
-6. Check `/admin` for anything in "Needs your attention".
+Sign in at `https://admin.yourdomain` with the seeded admin account, then immediately:
 
-Every privileged action is recorded at `/admin/logs`, including price and role changes.
+1. **Change the password** — the seed defaults are in a public repository.
+2. **Settings** → set the site name, tagline, contact email and social links. Check the integration badges read `razorpay` and, if configured, `configured` for AI.
+3. **Plans** → confirm the prices. These are the authoritative amounts; the client never supplies a price at checkout.
+4. **Users** → delete or suspend the `free@`, `editor@` and `premium@` demo accounts.
 
-### Roles
-
-- **admin** — everything, including prices, roles and settings
-- **editor** — content only: prompts, categories, tags, articles, moderation
-- **creator** — reserved for future creator submissions
-- **user** — standard member
-
-Grant the narrowest role that works. Assign roles at `/admin/users`. An admin cannot suspend their own account or remove their own admin role, so you cannot lock yourself out through the UI.
-
----
-
-## Rate limiting at scale
-
-The default in-memory limiter is correct on a single instance. On serverless or multi-instance hosting, each instance keeps its own counters, so effective limits multiply by the instance count.
-
-This matters most for `login`, `signup` and `passwordReset`. For a small deployment it is usually acceptable. Past that, implement the `RateLimitStore` interface in `src/lib/rate-limit.ts` — it has two methods, `hit()` and `reset()` — back it with Redis, and set:
+If you seeded on a schema without any admin, promote an existing account directly:
 
 ```bash
-RATE_LIMIT_DRIVER=redis
-REDIS_URL=rediss://...
+cd apps/api
+wrangler d1 execute promptduniya --remote --command \
+  "INSERT INTO user_roles (user_id, role_id, created_at)
+   SELECT u.id, r.id, unixepoch() FROM users u, roles r
+   WHERE u.email_normalized = 'you@yourdomain' AND r.name = 'admin'
+   ON CONFLICT DO NOTHING"
 ```
-
-Nothing else in the application needs to change; `consume()` and `enforce()` go through the store.
 
 ---
 
-## Alternative platforms
+## Local development
 
-### Docker
+```bash
+npm install
+npm run provision                                    # or reuse existing resources
 
-```dockerfile
-FROM node:22-alpine AS deps
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+cp apps/api/.dev.vars.example apps/api/.dev.vars      # set AUTH_SECRET
+cp apps/web/.env.example      apps/web/.env           # the same AUTH_SECRET
+cp apps/admin/.env.example    apps/admin/.env
 
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+npm run db:setup:local                                # local D1 in .wrangler/
 
-FROM node:22-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-USER nextjs
-EXPOSE 3000
-CMD ["npm", "start"]
+npm run dev:api      # 127.0.0.1:8787   Worker with local D1/KV/R2
+npm run dev:web      # localhost:3000   next dev, with local bindings
+npm run dev:admin    # localhost:5173
 ```
 
-Run migrations as a separate step before starting containers, not in the entrypoint — concurrent containers racing on migrations will corrupt state.
+`apps/web/next.config.ts` calls `initOpenNextCloudflareForDev()`, so `next dev` gets the same local bindings the deployed Worker sees — including the `API` service binding. Local development therefore uses the same transport as production rather than a divergent HTTP path.
 
-### Railway, Render, Fly.io
+To run the website in the actual Workers runtime instead of Node:
 
-All work with the standard Next.js build. Set the same environment variables, use `npm run build` and `npm start`, and run `npm run db:migrate` as a release command.
+```bash
+npm run preview --workspace apps/web
+```
 
-### Self-hosted VPS
+Before pushing:
 
-Use a process manager (`pm2` or a systemd unit) plus Nginx or Caddy as a TLS-terminating reverse proxy. Ensure the proxy forwards `X-Forwarded-For`, or client IP detection — and therefore anonymous rate limiting — will see every request as coming from one address.
+```bash
+npm run verify     # typecheck + lint + build, all workspaces
+```
 
-With a single instance you can keep `DATABASE_URL=file:./data/promptduniya.db`. Back that file up.
+---
+
+## Updating a live deployment
+
+```bash
+git pull
+npm install
+npm run verify
+
+npm run db:migrate:remote      # only if packages/db/migrations changed
+npm run deploy:api
+npm run deploy:web
+npm run deploy:admin
+```
+
+Schema changes:
+
+```bash
+# edit packages/db/src/schema.ts, then
+npm run db:generate            # writes a new migration
+npm run db:migrate:local       # try it locally first
+npm run db:migrate:remote
+```
+
+Apply migrations **before** deploying the API when a change is additive, and deploy first when it is destructive — otherwise the running Worker briefly queries columns that no longer exist.
 
 ---
 
@@ -388,137 +342,74 @@ With a single instance you can keep `DATABASE_URL=file:./data/promptduniya.db`. 
 
 **Security**
 
-- [ ] `AUTH_SECRET` is freshly generated, 32+ bytes, and not the development value
-- [ ] Every seeded password changed; demo accounts removed or given real passwords
-- [ ] `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` are set and **not** `NEXT_PUBLIC_`
-- [ ] `.env` is not committed (`git check-ignore .env` prints `.env`)
-- [ ] HTTPS works; `http://` redirects to `https://`
-- [ ] Security headers present: `curl -sI https://yourdomain.in | grep -i content-security`
-- [ ] `/admin` redirects an anonymous visitor to `/login`
-- [ ] A non-admin account is refused at `/admin` (403 page)
+- [ ] `AUTH_SECRET` is 32+ random bytes and identical in both Workers
+- [ ] `CRON_SECRET` set in both
+- [ ] Seeded demo accounts removed or suspended; admin password changed
+- [ ] `WEB_ORIGIN` / `ADMIN_ORIGIN` are exact production origins — no wildcards
+- [ ] `PAYMENTS_MOCK_MODE` is `"false"`
+- [ ] Admin CSP `connect-src` lists your real API host
 
 **Payments**
 
-- [ ] `PAYMENTS_MOCK_MODE=false` in production
-- [ ] `/api/payments/mock-complete` returns 403 — confirms the simulator is off
-- [ ] Prices set at `/admin/plans` and correct on `/premium`
-- [ ] A real ₹1 payment captured, verified, and visible at `/admin/payments`
-- [ ] Webhook shows a valid signature and `Handled` status
-- [ ] A refund revoked access
-- [ ] Refund policy reflects your actual practice
+- [ ] Live Razorpay keys stored as secrets
+- [ ] Webhook registered and its secret stored
+- [ ] One real ₹1 purchase completed end to end, premium granted, receipt visible in **Billing**
+- [ ] Refund tested; entitlement revoked
 
 **Content and SEO**
 
-- [ ] `NEXT_PUBLIC_SITE_URL` matches the live domain exactly
-- [ ] `https://yourdomain.in/sitemap.xml` lists your prompts
-- [ ] `https://yourdomain.in/robots.txt` disallows `/admin`, `/api/` and `/dashboard`
-- [ ] A prompt page has a correct canonical URL and JSON-LD (test in Google Rich Results)
-- [ ] Open Graph preview renders (test with a real share on WhatsApp)
-- [ ] Sitemap submitted to Google Search Console
-- [ ] Legal pages reviewed and contact details correct
-
-**Functionality**
-
-- [ ] Register → verification email arrives → verify works
-- [ ] Password reset end to end
-- [ ] Copy a prompt; confirm the daily limit triggers at the configured count
-- [ ] A premium prompt shows the upgrade panel to a free account
-- [ ] Generator produces a prompt for each of Gemini, Midjourney and Flux
-- [ ] Random generator rolls and re-rolls
-- [ ] Save/unsave and like/unlike persist across reload
-- [ ] Contact form delivers to `/admin/messages`
-- [ ] Cron endpoint returns a JSON summary
-- [ ] Dark and light mode both look right
-- [ ] Tested at 320px, 390px, 768px and 1280px
+- [ ] Plans priced correctly
+- [ ] `NEXT_PUBLIC_SITE_URL` matches the live domain (drives canonicals, sitemap, Open Graph)
+- [ ] `/sitemap.xml` and `/robots.txt` resolve and list real URLs
+- [ ] A premium prompt viewed while signed out shows the paywall and **no prompt text in the HTML source**
 
 **Operations**
 
-- [ ] Database backups configured (`turso db shell <db> ".dump" > backup.sql`)
-- [ ] Cron scheduled and confirmed running
-- [ ] Uptime monitoring on `/` and `/api/payments/webhook`
-- [ ] You know how to roll back (below)
-
----
-
-## Post-launch monitoring
-
-**Daily for the first week**
-
-- `/admin` — the "Needs your attention" panel
-- `/admin/payments` — any failed payments or invalid webhook signatures
-- Host error logs
-
-**Weekly**
-
-- `/admin/analytics` — conversion rate, view-to-copy rate, top searches
-- `/admin/moderation` — reports and comments
-- Top search terms with zero results — they tell you which prompts to write next
-
-**Watch for**
-
-| Signal | Likely cause |
-| --- | --- |
-| Invalid webhook signatures | `RAZORPAY_WEBHOOK_SECRET` mismatch between Razorpay and your environment |
-| Payments stuck at `created` | Webhook not reaching your server — check the URL and Razorpay's delivery log |
-| Users reporting lost sessions | `AUTH_SECRET` changed, or instances have different values |
-| Trending never changing | Cron not running |
-| Verification emails missing | `EMAIL_PROVIDER` unset, or sending domain unverified |
-
-**Backups**
-
-```bash
-turso db shell promptduniya ".dump" > "backup-$(date +%F).sql"
-```
-
-Automate this. Test a restore before you need one.
+- [ ] Cron trigger listed under Trigger Events
+- [ ] `/health` returns `ok`
+- [ ] Custom domains resolve over HTTPS, including `media.`
+- [ ] Observability enabled (it is on by default in all three configs)
 
 ---
 
 ## Troubleshooting
 
-**Build fails with "Invalid environment configuration"**
-`AUTH_SECRET` is missing or shorter than 16 characters. Set it in your host's environment variables, not just locally.
+**Website shows every visitor as signed out.** `AUTH_SECRET` differs between the two Workers. The website verifies the JWT locally; a mismatched key fails every verification silently. Re-set both from the same value and redeploy.
 
-**"attempt to write a readonly database"**
-`DATABASE_AUTH_TOKEN` is missing or lacks write permission. Regenerate with `turso db tokens create promptduniya`.
+**Admin login fails with a CORS or network error.** `ADMIN_ORIGIN` in the API config must equal the admin origin exactly, scheme included. The refresh cookie is `SameSite=None`, which requires credentialed CORS and an exact origin match — a wildcard will not work.
 
-**Payment succeeds but premium is not granted**
-Check `/admin/payments` → Webhook deliveries. If the signature is rejected, the secret does not match. If nothing arrived, the webhook URL is wrong or unreachable. The payment is recoverable — replay it from the Razorpay dashboard once fixed.
+**Admin loads but every request 401s.** The refresh cookie is scoped `Path=/v1/auth`. Confirm the SPA is calling the API host directly (`VITE_API_BASE_URL`) and not a proxy that strips cookies.
 
-**"Your session token is missing or stale" on every form**
-`NEXT_PUBLIC_SITE_URL` does not match the browsing origin, so the CSRF origin check fails. Make them identical, including protocol and no trailing slash.
+**Deep links into the admin console 404.** `not_found_handling: "single-page-application"` is missing from `apps/admin/wrangler.jsonc`. Without it, only `/` resolves.
 
-**Uploads vanish after redeploy**
-Object storage is not configured, so files went to `public/uploads`, which is ephemeral. Configure R2 (step 7).
+**Website deploy fails on the service binding.** Deploy the API first; the binding cannot resolve against a Worker that does not exist.
 
-**Rate limits feel too generous**
-Expected on multi-instance hosting with the in-memory driver. See [Rate limiting at scale](#rate-limiting-at-scale).
+**Pages render but lists are empty.** The API was unreachable during `next build`, so pre-rendering produced nothing. The service binding also only exists in the deployed Worker — during a CI build the HTTP transport is used, so `API_BASE_URL` must be publicly reachable from the build environment.
 
-**Images not optimised**
-The host is not in `images.remotePatterns` in `next.config.ts`. Add your media domain and redeploy.
+**`no such table` from D1.** Migrations have not been applied to that database. Run `npm run db:migrate:remote`, and note `--local` and `--remote` are separate databases.
 
-**Prompt pages return 404 after seeding**
-Prompt pages are statically generated. Redeploy, or rely on the 10-minute `revalidate` window.
+**Uploads rejected as "not a valid image".** The magic-byte check failed. The file is not actually a JPEG/PNG/WebP/AVIF/GIF regardless of its extension.
+
+**Rate limits feel too aggressive.** Limits are per named rule in `apps/api/src/lib/rate-limit.ts` and are multiplied per viewer tier (4× premium, 2× signed-in, 1× guest).
+
+**Logs:** `npx wrangler tail --name promptduniya-api` (or `-web`).
 
 ---
 
 ## Rollback
 
 ```bash
-# Vercel: promote the previous deployment
-vercel rollback
-
-# Or from the dashboard: Deployments → pick the last good one → Promote to Production
+# List and roll back to a previous version
+npx wrangler deployments list --name promptduniya-api
+npx wrangler rollback --name promptduniya-api
 ```
 
-Rolling back code does **not** roll back the database. Migrations in this project are additive, so an older build generally runs fine against a newer schema. If you need to reverse a destructive migration, restore from a backup:
+Roll back the API and website together when their contract changed — the website's local JWT verification and the API's token claims must stay in step.
+
+D1 has no automatic rollback. Before a destructive migration:
 
 ```bash
-turso db shell promptduniya < backup-YYYY-MM-DD.sql
+npx wrangler d1 export promptduniya --remote --output backup.sql
 ```
 
-Take a backup before every migration that drops or renames a column.
-
----
-
-Anything unclear or broken in this guide is worth reporting — deployment docs rot faster than code.
+Take that export as part of any release that drops or renames a column.

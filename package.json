@@ -2,49 +2,39 @@
   "name": "promptduniya",
   "version": "1.0.0",
   "private": true,
-  "description": "promptduniya — Create Better. Imagine More. An India-focused AI prompt discovery, generation and premium membership platform.",
+  "description": "promptduniya — Cloudflare-native monorepo. Separate API (Hono Worker + D1/KV/R2), public website (Next.js) and admin (Vite SPA).",
   "engines": {
     "node": ">=20.0.0"
   },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest --run",
-    "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:studio": "drizzle-kit studio",
-    "db:seed": "tsx scripts/seed.ts",
-    "db:reset": "tsx scripts/reset.ts",
-    "setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
-  },
-  "dependencies": {
-    "@libsql/client": "^0.15.4",
-    "bcryptjs": "^3.0.2",
-    "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.44.2",
-    "jose": "^6.0.11",
-    "next": "^15.5.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "zod": "^3.25.67"
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "verify": "npm run typecheck && npm run lint && npm run build",
+    "dev:api": "npm run dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "dev:admin": "npm run dev --workspace apps/admin",
+    "build:admin": "npm run build --workspace apps/admin",
+    "provision": "node scripts/provision.mjs",
+    "provision:dry-run": "node scripts/provision.mjs --dry-run",
+    "deploy:api": "npm run deploy --workspace apps/api",
+    "deploy:web": "npm run deploy --workspace apps/web",
+    "deploy:admin": "npm run deploy --workspace apps/admin",
+    "db:generate": "npm run db:generate --workspace packages/db",
+    "db:migrate:local": "npm run db:migrate:local --workspace apps/api",
+    "db:migrate:remote": "npm run db:migrate:remote --workspace apps/api",
+    "db:seed:generate": "npm run db:seed:generate --workspace apps/api",
+    "db:seed:local": "npm run db:seed:local --workspace apps/api",
+    "db:seed:remote": "npm run db:seed:remote --workspace apps/api",
+    "db:setup:local": "npm run db:setup:local --workspace apps/api",
+    "db:setup:remote": "npm run db:setup:remote --workspace apps/api"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
-    "@tailwindcss/postcss": "^4.1.11",
-    "@types/node": "^22.15.0",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "drizzle-kit": "^0.31.4",
-    "eslint": "^9.30.0",
-    "eslint-config-next": "^15.5.0",
-    "tailwindcss": "^4.1.11",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "typescript": "^5.8.3"
   }
 }

@@ -1,0 +1,12 @@
+# Static asset caching for the OpenNext worker.
+# Next.js emits content-hashed filenames under /_next/static, so those are
+# immutable. Everything else is left to the framework's own cache headers.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Never cache the API proxy routes.
+/api/*
+  Cache-Control: no-store, max-age=0
