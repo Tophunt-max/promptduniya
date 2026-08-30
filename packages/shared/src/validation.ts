@@ -4,12 +4,18 @@ import {
   ACCESS_FILTERS,
   AI_MODEL_IDS,
   ASPECT_RATIOS,
+  AUTOMATION_LOG_LEVELS,
+  AUTOMATION_LOG_SCOPES,
   DIFFICULTIES,
   GENDERS,
   INPUT_MODE_IDS,
   PAGE_SIZE,
   QUALITY_LEVELS,
+  QUEUE_SOURCES,
+  QUEUE_STATUSES,
   SORT_OPTIONS,
+  TREND_SOURCES,
+  TREND_STATUSES,
 } from './constants';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from './password-bounds';
 
@@ -411,3 +417,138 @@ export const adminUserUpdateSchema = z.object({
   grantPremiumDays: z.coerce.number().int().min(1).max(3650).optional(),
   revokePremium: z.boolean().optional(),
 });
+
+
+/* ========================= Content automation ========================== */
+
+const queueStatusEnum = z.enum(QUEUE_STATUSES);
+
+/**
+ * Enqueue one or more briefs.
+ *
+ * Themes arrive as an array rather than one per request because enqueueing is
+ * cheap and fast — it is only a row insert. The expensive part (writing the
+ * prompt, drawing the cover) happens later in the runner, so the client is not
+ * waiting on it and does not need to drive a loop.
+ */
+export const queueEnqueueSchema = z.object({
+  themes: z.array(cleanText(200, 3)).min(1).max(100),
+  categoryId: idSchema,
+  aiModel: aiModelEnum,
+  inputMode: inputModeEnum.optional().default('text-to-image'),
+  isPremium: z.boolean().optional().default(false),
+  publishMode: z.enum(['draft', 'publish', 'schedule']).optional().default('draft'),
+  scheduledFor: z.number().int().positive().optional().nullable(),
+  skipCover: z.boolean().optional().default(false),
+  priority: z.coerce.number().int().min(-100).max(100).optional().default(0),
+  /** Optional trend signal these themes came from, so it can be marked used. */
+  trendSignalId: idSchema.optional().nullable(),
+});
+
+export const queueQuerySchema = paginationSchema.extend({
+  status: queueStatusEnum.optional(),
+  source: z.enum(QUEUE_SOURCES).optional(),
+  runId: idSchema.optional(),
+});
+
+/** Approving a held item: publish it now, or pin it to a date. */
+export const queueApproveSchema = z.object({
+  publishMode: z.enum(['draft', 'publish', 'schedule']).optional().default('publish'),
+  scheduledFor: z.number().int().positive().optional().nullable(),
+});
+
+/**
+ * Drain the queue on demand.
+ *
+ * `limit` and `budgetSeconds` both exist because the two ways a run ends are
+ * "enough items" and "out of time", and an operator triggering a run by hand
+ * wants a different answer for each than the cron tick does.
+ */
+export const automationProcessSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  budgetSeconds: z.coerce.number().int().min(5).max(600).optional(),
+  /** Queue fresh items from trends first if the queue is empty. */
+  topUp: z.boolean().optional().default(false),
+});
+
+export const trendQuerySchema = paginationSchema.extend({
+  status: z.enum(TREND_STATUSES).optional(),
+  source: z.enum(TREND_SOURCES).optional(),
+});
+
+export const trendDiscoverSchema = z.object({
+  /** How many AI-expanded topics to ask for on top of the mined signals. */
+  aiCount: z.coerce.number().int().min(0).max(40).optional().default(12),
+  /** Skip the language model and mine only internal signals. */
+  internalOnly: z.boolean().optional().default(false),
+});
+
+export const trendManualSchema = z.object({
+  label: cleanText(200, 3),
+  categoryId: idSchema.optional().nullable(),
+  score: z.coerce.number().min(0).max(1000).optional().default(50),
+  rationale: cleanText(400).optional(),
+});
+
+/** Preview ideas without committing anything to the queue. */
+export const ideaGenerateSchema = z.object({
+  count: z.coerce.number().int().min(1).max(40).optional().default(10),
+  /** Free-text steer, e.g. "monsoon fashion". Optional — trends fill the gap. */
+  seed: cleanText(200).optional(),
+  categoryId: idSchema.optional().nullable(),
+  /** Use stored trend signals as the basis instead of `seed`. */
+  useTrends: z.boolean().optional().default(true),
+});
+
+export const automationLogQuerySchema = paginationSchema.extend({
+  level: z.enum(AUTOMATION_LOG_LEVELS).optional(),
+  scope: z.enum(AUTOMATION_LOG_SCOPES).optional(),
+  jobId: idSchema.optional(),
+  runId: idSchema.optional(),
+});
+
+/**
+ * Automation config write.
+ *
+ * Every field optional — the admin screen sends only what changed, and a
+ * partial write must not reset the rest to defaults.
+ */
+export const automationConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  postsPerDay: z.coerce.number().int().min(0).max(200).optional(),
+  publishHours: z
+    .string()
+    .trim()
+    .max(80)
+    .regex(
+      /^\s*(\d{1,2})(\s*,\s*\d{1,2})*\s*$/,
+      'Use a comma-separated list of hours, for example 9,13,18,21',
+    )
+    .optional(),
+  timezoneOffsetMinutes: z.coerce.number().int().min(-840).max(840).optional(),
+  publishMode: z.enum(['draft', 'publish', 'schedule']).optional(),
+  autoPublish: z.boolean().optional(),
+  minQualityScore: z.coerce.number().int().min(0).max(100).optional(),
+  duplicateThreshold: z.coerce.number().int().min(50).max(100).optional(),
+  autoImages: z.boolean().optional(),
+  autoSeo: z.boolean().optional(),
+  autoCategory: z.boolean().optional(),
+  autoTags: z.boolean().optional(),
+  duplicateDetection: z.boolean().optional(),
+  trendDiscovery: z.boolean().optional(),
+  maxPerRun: z.coerce.number().int().min(1).max(50).optional(),
+  runBudgetSeconds: z.coerce.number().int().min(10).max(600).optional(),
+  maxAttempts: z.coerce.number().int().min(1).max(10).optional(),
+  premiumRatio: z.coerce.number().int().min(0).max(100).optional(),
+  photoEditRatio: z.coerce.number().int().min(0).max(100).optional(),
+  defaultAiModel: aiModelEnum.optional(),
+  logRetentionDays: z.coerce.number().int().min(1).max(365).optional(),
+});
+
+export type QueueEnqueueInput = z.infer<typeof queueEnqueueSchema>;
+export type QueueApproveInput = z.infer<typeof queueApproveSchema>;
+export type AutomationProcessInput = z.infer<typeof automationProcessSchema>;
+export type TrendDiscoverInput = z.infer<typeof trendDiscoverSchema>;
+export type TrendManualInput = z.infer<typeof trendManualSchema>;
+export type IdeaGenerateInput = z.infer<typeof ideaGenerateSchema>;
+export type AutomationConfigInput = z.infer<typeof automationConfigSchema>;

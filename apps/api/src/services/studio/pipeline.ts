@@ -7,30 +7,48 @@ import { createPrompt, setPromptPublished } from '../prompts';
 import { generatePromptCover } from '../images/covers';
 import { imageProviderStatus } from '../images';
 import { assertBriefValid, draftPrompt, type StudioBrief } from './blueprint';
+import { findDuplicate, type DuplicateMatch } from './duplicates';
+import { scorePrompt, type QualityReport } from './quality';
 import { textProviderStatus } from './text';
 
 /**
  * The content pipeline: idea in, published prompt with a cover out.
  *
- * Four steps, and the ordering matters:
+ * Six steps, and the ordering matters:
  *
  *   1. write the prompt record with a language model
- *   2. insert it as an unpublished draft
- *   3. generate its cover image from the record just written
- *   4. publish, schedule, or leave it as a draft
+ *   2. check it is not a near-duplicate of something already in the catalogue
+ *   3. insert it as an unpublished draft
+ *   4. generate its cover image from the record just written
+ *   5. score it against the house style
+ *   6. publish, schedule, or hold it for review
  *
- * The draft is saved *before* the cover is generated for two reasons. The cover
+ * The duplicate check sits before the insert so a rediscovered topic never
+ * reaches the catalogue at all. It cannot run any earlier than this — the check
+ * compares written prompts, and until step 1 there is nothing to compare — so a
+ * duplicate still costs one model call. `themeAlreadyUsed` in duplicates.ts is
+ * the cheaper pre-flight the runner uses to avoid most of them before spending
+ * anything.
+ *
+ * The draft is saved before the cover is generated for two reasons. The cover
  * generator reads the stored columns to build its image instruction, so the row
  * has to exist first. And if image generation fails — a daily quota, a safety
  * filter — the written prompt survives as a draft rather than being thrown away
  * along with the failure. A prompt with no cover is worth keeping; several
  * minutes of model output that vanished is not.
  *
+ * Quality scoring happens after the cover so the score can account for whether
+ * an example image actually exists, which is a real part of whether the post is
+ * publishable. It gates publication only: a low-scoring prompt is still saved,
+ * still visible in the console, and still one click from being published by a
+ * human who disagrees with the score.
+ *
  * Publishing happens last so nothing reaches the public site half-built.
  *
- * One item per call. Generation takes tens of seconds, so the admin client
- * drives the loop and reports progress; a failure on item eight then costs one
- * item rather than the whole batch.
+ * One item per call. Generation takes tens of seconds, so the caller drives the
+ * loop — the admin client for a hand-run batch, `automation/runner.ts` for an
+ * unattended one — and a failure on item eight then costs one item rather than
+ * the whole batch.
  */
 
 export type PublishMode = 'draft' | 'publish' | 'schedule';
@@ -47,6 +65,17 @@ export interface StudioRunInput {
   /** Skip the image step — useful when an image quota is exhausted. */
   skipCover?: boolean;
   authorId: string | null;
+
+  /* ---- Gates. Off by default so the manual studio behaves as it always did. ---- */
+
+  /**
+   * Refuse to publish below this score, holding the prompt as a draft instead.
+   * Undefined disables the gate; the prompt is still scored and the score is
+   * still returned, because the number is useful even when it decides nothing.
+   */
+  minQualityScore?: number;
+  /** Reject near-duplicates outright. Undefined disables the check entirely. */
+  duplicateThreshold?: number;
 }
 
 export interface StudioRunResult {
@@ -60,6 +89,33 @@ export interface StudioRunResult {
   coverError: string | null;
   textEngine: string;
   imageEngine: string | null;
+  /** Always present — scoring is cheap and the number is always worth having. */
+  quality: QualityReport;
+  /** True when the quality gate stopped this from publishing. */
+  heldForReview: boolean;
+  /** Why it was held, ready to show in the console. */
+  holdReason: string | null;
+}
+
+/**
+ * Thrown when the duplicate gate rejects a draft before it is saved.
+ *
+ * A distinct error type rather than a result field because there is no prompt to
+ * return — nothing was inserted — and the caller needs the match to record which
+ * existing prompt it collided with.
+ */
+export class DuplicateContentError extends Error {
+  readonly match: DuplicateMatch;
+  readonly threshold: number;
+
+  constructor(match: DuplicateMatch, threshold: number) {
+    super(
+      `This is a near-duplicate of "${match.title}" (${match.score}% similar, threshold ${threshold}%).`,
+    );
+    this.name = 'DuplicateContentError';
+    this.match = match;
+    this.threshold = threshold;
+  }
 }
 
 export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRunResult> {
@@ -85,7 +141,21 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
   /* 1. Write it. */
   const draft = await draftPrompt(brief);
 
-  /* 2. Save it as a draft. */
+  /* 2. Duplicate gate — before anything is persisted. */
+  if (input.duplicateThreshold !== undefined) {
+    const verdict = await findDuplicate({
+      title: draft.title,
+      promptText: draft.promptText,
+      tags: draft.tags,
+      threshold: input.duplicateThreshold,
+    });
+
+    if (verdict.isDuplicate && verdict.match) {
+      throw new DuplicateContentError(verdict.match, verdict.threshold);
+    }
+  }
+
+  /* 3. Save it as a draft. */
   const created = await createPrompt(
     {
       title: draft.title,
@@ -110,7 +180,7 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
       isFeatured: false,
       isTrending: false,
       isEditorsPick: false,
-      // Always inserted unpublished; step 4 decides what happens next.
+      // Always inserted unpublished; step 6 decides what happens next.
       isPublished: false,
       scheduledFor: null,
       seoTitle: draft.seoTitle || undefined,
@@ -122,7 +192,7 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
 
   if (!created) throw AppError.badRequest('The prompt could not be saved');
 
-  /* 3. Cover. Never fatal — the draft is already safe. */
+  /* 4. Cover. Never fatal — the draft is already safe. */
   let coverUrl: string | null = null;
   let coverError: string | null = null;
   let imageEngine: string | null = null;
@@ -137,16 +207,35 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
     }
   }
 
-  /* 4. Publish, schedule, or leave alone. */
+  /* 5. Score it. */
+  const quality = scorePrompt({
+    draft,
+    inputMode: input.inputMode,
+    hasCover: Boolean(coverUrl),
+    // Not penalised for a missing image when no image was ever attempted.
+    coverRequired: !input.skipCover,
+  });
+
+  /* 6. Publish, schedule, or hold. */
+  const gateActive = input.minQualityScore !== undefined;
+  const failsGate = gateActive && (quality.blocked || quality.score < input.minQualityScore!);
+
   let published = false;
   let scheduledFor: number | null = null;
+  let holdReason: string | null = null;
 
-  if (input.publishMode === 'publish') {
+  if (failsGate) {
+    holdReason = quality.blocked
+      ? quality.summary
+      : `Scored ${quality.score}, below the ${input.minQualityScore} threshold. Failed: ${
+          quality.failed.slice(0, 3).join('; ') || 'unknown'
+        }.`;
+  } else if (input.publishMode === 'publish') {
     await setPromptPublished(created.id, true);
     published = true;
   } else if (input.publishMode === 'schedule') {
-    // The nightly maintenance job publishes anything whose scheduledFor has
-    // passed, so this only has to record the date.
+    // Maintenance publishes anything whose scheduledFor has passed, so this only
+    // has to record the date.
     scheduledFor = input.scheduledFor ?? nowSec() + 86_400;
     await db
       .update(prompts)
@@ -164,6 +253,9 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
     coverError,
     textEngine: draft.engine,
     imageEngine,
+    quality,
+    heldForReview: failsGate,
+    holdReason,
   };
 }
 

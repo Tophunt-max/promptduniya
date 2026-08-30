@@ -365,3 +365,122 @@ export const SETTING_KEYS = {
   registrationEnabled: 'ops.registration_enabled',
   requireEmailVerification: 'ops.require_email_verification',
 } as const;
+
+
+/* ========================= Content automation ========================== */
+
+/**
+ * Lifecycle of a content queue item.
+ *
+ * Ordered roughly as an item travels through it. The three terminal-but-not-done
+ * states matter as much as the happy path:
+ *
+ *   needs_review  generated, but scored below the auto-publish threshold. A
+ *                 human decides. This is the state that keeps a weak model from
+ *                 quietly filling the catalogue with filler.
+ *   duplicate     the duplicate gate matched an existing prompt. Kept rather
+ *                 than deleted so the operator can see what the scanner keeps
+ *                 rediscovering.
+ *   failed        a provider error, retried up to maxAttempts first.
+ */
+export const QUEUE_STATUSES = [
+  'queued',
+  'generating',
+  'generated',
+  'quality_check',
+  'needs_review',
+  'approved',
+  'scheduled',
+  'published',
+  'failed',
+  'cancelled',
+  'duplicate',
+] as const;
+
+export type QueueStatus = (typeof QUEUE_STATUSES)[number];
+
+/** Statuses an item can still move out of on its own. */
+export const QUEUE_PENDING_STATUSES = ['queued', 'approved'] as const;
+
+/** Statuses that will never change without an operator acting. */
+export const QUEUE_TERMINAL_STATUSES = [
+  'published',
+  'cancelled',
+  'duplicate',
+] as const;
+
+export const QUEUE_SOURCES = ['manual', 'automation', 'trend'] as const;
+export type QueueSource = (typeof QUEUE_SOURCES)[number];
+
+export const TREND_SOURCES = [
+  'search',
+  'engagement',
+  'calendar',
+  'category',
+  'ai',
+  'manual',
+] as const;
+export type TrendSource = (typeof TREND_SOURCES)[number];
+
+export const TREND_STATUSES = ['new', 'queued', 'used', 'dismissed'] as const;
+export type TrendStatus = (typeof TREND_STATUSES)[number];
+
+export const AUTOMATION_LOG_LEVELS = ['info', 'warn', 'error'] as const;
+export type AutomationLogLevel = (typeof AUTOMATION_LOG_LEVELS)[number];
+
+export const AUTOMATION_LOG_SCOPES = [
+  'cron',
+  'queue',
+  'trend',
+  'idea',
+  'text',
+  'image',
+  'quality',
+  'duplicate',
+  'publish',
+] as const;
+export type AutomationLogScope = (typeof AUTOMATION_LOG_SCOPES)[number];
+
+/**
+ * Automation configuration, stored in `site_settings` like every other runtime
+ * setting rather than in a table of its own.
+ *
+ * Deliberately not environment variables: the whole point is that an operator
+ * can change the posting rate or raise the quality bar from the console without
+ * a redeploy. Cloudflare cron expressions cannot be edited at runtime, so the
+ * Worker ticks hourly and `publishHours` decides which of those ticks actually
+ * generate. That is what makes the schedule configurable.
+ */
+export const AUTOMATION_SETTING_KEYS = {
+  enabled: 'automation.enabled',
+  postsPerDay: 'automation.posts_per_day',
+  /** Comma-separated hours, local to `timezoneOffsetMinutes`, e.g. "9,13,18,21". */
+  publishHours: 'automation.publish_hours',
+  timezoneOffsetMinutes: 'automation.timezone_offset_minutes',
+  /** publish | draft | schedule — what a passing item does. */
+  publishMode: 'automation.publish_mode',
+  autoPublish: 'automation.auto_publish',
+  minQualityScore: 'automation.min_quality_score',
+  duplicateThreshold: 'automation.duplicate_threshold',
+  autoImages: 'automation.auto_images',
+  autoSeo: 'automation.auto_seo',
+  autoCategory: 'automation.auto_category',
+  autoTags: 'automation.auto_tags',
+  duplicateDetection: 'automation.duplicate_detection',
+  trendDiscovery: 'automation.trend_discovery',
+  /** Ceiling on items processed in a single cron tick. */
+  maxPerRun: 'automation.max_per_run',
+  /** Wall-clock budget for one run, so a tick cannot overrun its invocation. */
+  runBudgetSeconds: 'automation.run_budget_seconds',
+  maxAttempts: 'automation.max_attempts',
+  /** Share of generated posts marked premium, 0-100. */
+  premiumRatio: 'automation.premium_ratio',
+  /** Share generated as photo-edit rather than text-to-image, 0-100. */
+  photoEditRatio: 'automation.photo_edit_ratio',
+  defaultAiModel: 'automation.default_ai_model',
+  /** Days of automation_logs to keep. */
+  logRetentionDays: 'automation.log_retention_days',
+} as const;
+
+export type AutomationSettingKey =
+  (typeof AUTOMATION_SETTING_KEYS)[keyof typeof AUTOMATION_SETTING_KEYS];

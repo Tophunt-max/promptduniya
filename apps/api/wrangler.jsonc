@@ -35,10 +35,26 @@
   // flux-1-schnell images — more than enough to backfill the catalogue.
   "ai": { "binding": "AI" },
 
-  // ---- Nightly maintenance (publish scheduled, trending, expiries) ----
-  // 19:30 UTC == 01:00 IST, the platform's quiet hour.
+  // ---- Scheduled work ----
+  // Two cadences, dispatched in `scheduled()` by matching event.cron:
+  //
+  //   "30 19 * * *"  Nightly maintenance. 19:30 UTC == 01:00 IST, the quiet
+  //                  hour. Trending recompute, subscription expiries, and
+  //                  housekeeping on the automation tables.
+  //   "0 * * * *"    Hourly. Publishes prompts whose scheduled time has passed,
+  //                  then ticks the content automation.
+  //
+  // The hourly tick is what makes automation schedulable without a redeploy:
+  // cron expressions are fixed at deploy time, so the Worker wakes every hour
+  // and the `automation.publish_hours` setting decides which of those wake-ups
+  // actually generates. Change the posting schedule from the admin console, not
+  // from this file.
+  //
+  // It also fixes the effective granularity of `prompts.scheduled_for`. That
+  // column is stored to the second, but while publishing only ran nightly a
+  // prompt scheduled for 09:00 did not appear until 01:00 the next morning.
   "triggers": {
-    "crons": ["30 19 * * *"]
+    "crons": ["30 19 * * *", "0 * * * *"]
   },
 
   // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----

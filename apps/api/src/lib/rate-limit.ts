@@ -39,6 +39,19 @@ export const RATE_LIMITS = {
   adminWrite: { name: 'admin:write', limit: 240, windowSec: 60 },
   adminRead: { name: 'admin:read', limit: 600, windowSec: 60 },
   webhook: { name: 'webhook', limit: 600, windowSec: 60 },
+  /**
+   * Admin endpoints that spend a provider quota.
+   *
+   * Separate from `adminWrite` because the cost profile is nothing alike: an
+   * admin write is a row update, whereas one of these is a language model call
+   * and possibly an image generation. The account-wide AI allocation is the
+   * scarce resource, and an editor holding a button down or a retried fetch
+   * could burn a day of it in a minute. Deliberately generous enough not to
+   * interfere with a legitimate batch, tight enough to bound the damage.
+   */
+  aiGenerate: { name: 'admin:ai-generate', limit: 60, windowSec: 600 },
+  /** Discovery and idea previews — one model call each, so a looser bound. */
+  aiDiscover: { name: 'admin:ai-discover', limit: 30, windowSec: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
