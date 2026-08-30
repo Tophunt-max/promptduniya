@@ -3,9 +3,13 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminLayout } from './components/layout';
 import { Spinner } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
+import { AnalyticsPage } from './pages/analytics';
 import { ArticlesPage } from './pages/articles';
 import { AutomationPage } from './pages/automation';
 import { BillingPage } from './pages/billing';
+import { LogsPage } from './pages/logs';
+import { NotificationsPage } from './pages/notifications';
+import { TagsPage } from './pages/tags';
 import { CategoriesPage } from './pages/categories';
 import { CouponsPage } from './pages/coupons';
 import { DashboardPage } from './pages/dashboard';
@@ -63,9 +67,11 @@ export function App() {
             <Route path="studio" element={<StudioPage />} />
             <Route path="automation" element={<AutomationPage />} />
             <Route path="categories" element={<CategoriesPage />} />
+            <Route path="tags" element={<TagsPage />} />
             <Route path="articles" element={<ArticlesPage />} />
             <Route path="media" element={<MediaPage />} />
             <Route path="moderation" element={<ModerationPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
 
             <Route
               path="plans"
@@ -96,6 +102,22 @@ export function App() {
               element={
                 <RequireAdmin>
                   <UsersPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="notifications"
+              element={
+                <RequireAdmin>
+                  <NotificationsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="logs"
+              element={
+                <RequireAdmin>
+                  <LogsPage />
                 </RequireAdmin>
               }
             />

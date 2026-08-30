@@ -12,6 +12,7 @@ import generatorRoutes from './routes/generator';
 import catalogRoutes from './routes/catalog';
 import paymentRoutes from './routes/payments';
 import adminRoutes from './routes/admin';
+import adminExtraRoutes from './routes/admin-extra';
 import automationRoutes from './routes/automation';
 import viewerRoutes from './routes/viewer';
 import { clientIp } from './middleware';
@@ -72,6 +73,9 @@ app.route('/v1/catalog', catalogRoutes);
 app.route('/v1/payments', paymentRoutes);
 // Mounted before /v1/admin so the more specific prefix wins.
 app.route('/v1/admin/automation', automationRoutes);
+// Two sub-apps share the /v1/admin prefix; Hono merges their route tables, so
+// the split between them is invisible to callers. See routes/admin-extra.ts.
+app.route('/v1/admin', adminExtraRoutes);
 app.route('/v1/admin', adminRoutes);
 app.route('/v1/viewer', viewerRoutes);
 

@@ -3,13 +3,17 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { useAuth } from '@/lib/auth';
 import {
+  AnalyticsIcon,
   ArticlesIcon,
   AutomationIcon,
+  BellIcon,
   BillingIcon,
   CategoriesIcon,
   CloseIcon,
   CouponsIcon,
   DashboardIcon,
+  LogsIcon,
+  TagsIcon,
   ExternalIcon,
   LogOutIcon,
   MediaIcon,
@@ -48,7 +52,10 @@ interface NavItem {
 const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Overview',
-    items: [{ to: '/', label: 'Dashboard', icon: DashboardIcon }],
+    items: [
+      { to: '/', label: 'Dashboard', icon: DashboardIcon },
+      { to: '/analytics', label: 'Analytics', icon: AnalyticsIcon },
+    ],
   },
   {
     group: 'Content',
@@ -57,13 +64,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: '/studio', label: 'AI Studio', icon: SparkleIcon },
       { to: '/prompts', label: 'Prompts', icon: PromptsIcon },
       { to: '/categories', label: 'Categories', icon: CategoriesIcon },
+      { to: '/tags', label: 'Tags', icon: TagsIcon },
       { to: '/articles', label: 'Articles', icon: ArticlesIcon },
       { to: '/media', label: 'Media', icon: MediaIcon },
     ],
   },
   {
     group: 'Community',
-    items: [{ to: '/moderation', label: 'Moderation', icon: ModerationIcon }],
+    items: [
+      { to: '/moderation', label: 'Moderation', icon: ModerationIcon },
+      { to: '/notifications', label: 'Notifications', icon: BellIcon, adminOnly: true },
+    ],
   },
   {
     group: 'Business',
@@ -72,6 +83,12 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: '/coupons', label: 'Coupons', icon: CouponsIcon, adminOnly: true },
       { to: '/billing', label: 'Billing', icon: BillingIcon, adminOnly: true },
       { to: '/users', label: 'Users', icon: UsersIcon, adminOnly: true },
+    ],
+  },
+  {
+    group: 'System',
+    items: [
+      { to: '/logs', label: 'Audit log', icon: LogsIcon, adminOnly: true },
       { to: '/settings', label: 'Settings', icon: SettingsIcon, adminOnly: true },
     ],
   },

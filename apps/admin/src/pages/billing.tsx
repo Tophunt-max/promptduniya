@@ -17,8 +17,8 @@ import {
   formatMoney,
   formatNumber,
 } from '@/components/ui';
-import { qs } from '@/lib/api';
-import { useQuery } from '@/lib/use-api';
+import { api, qs } from '@/lib/api';
+import { useMutation, useQuery } from '@/lib/use-api';
 
 interface PaymentRow {
   id: string;
@@ -77,6 +77,8 @@ export function BillingPage() {
   const [tab, setTab] = useState<Tab>('payments');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
+  const [notice, setNotice] = useState<string | null>(null);
+  const action = useMutation();
 
   const payments = useQuery<Paged<PaymentRow>>(
     tab === 'payments' ? `/v1/admin/payments${qs({ status, page, pageSize: 25 })}` : null,
@@ -98,12 +100,40 @@ export function BillingPage() {
     events: [],
   };
 
+  /**
+   * Cancels a membership on the member's behalf.
+   *
+   * Ends auto-renewal and lets the paid period run out rather than revoking access
+   * immediately — cancelling a plan someone has already paid for should not take
+   * away what they bought.
+   */
+  async function cancel(row: SubscriptionRow) {
+    if (
+      !window.confirm(
+        `Cancel ${row.userEmail}'s ${row.planName} membership? Access continues until ${formatDate(row.endDate)}.`,
+      )
+    ) {
+      return;
+    }
+
+    const result = await action.run(() =>
+      api.post(`/v1/admin/subscriptions/${encodeURIComponent(row.id)}/cancel`, {}),
+    );
+    if (result !== null) {
+      setNotice(`Cancelled ${row.userEmail}'s membership.`);
+      subscriptions.reload();
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="Billing"
         description="Payments, memberships and the raw gateway webhook log."
       />
+
+      {action.error && <Alert>{action.error}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(['payments', 'subscriptions', 'events'] as Tab[]).map((item) => (
@@ -176,7 +206,7 @@ export function BillingPage() {
           subscriptions.data.items.length === 0 ? (
             <EmptyState>No memberships yet.</EmptyState>
           ) : (
-            <Table head={['Member', 'Plan', 'Status', 'Period', 'Renewal']}>
+            <Table head={['Member', 'Plan', 'Status', 'Period', 'Renewal', '']}>
               {subscriptions.data.items.map((row) => (
                 <Row key={row.id}>
                   <Cell>
@@ -194,6 +224,23 @@ export function BillingPage() {
                     {formatDate(row.startDate)} → {formatDate(row.endDate)}
                   </Cell>
                   <Cell className="text-xs">{row.autoRenew ? 'Auto-renews' : 'Ends'}</Cell>
+                  <Cell>
+                    {/* This screen was entirely read-only. `cancelSubscription`
+                        existed but was scoped to the member's own dashboard, so
+                        support work had no way to act on a membership at all. */}
+                    {row.status === 'active' && (
+                      <div className="flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={action.pending}
+                          onClick={() => void cancel(row)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </Cell>
                 </Row>
               ))}
             </Table>

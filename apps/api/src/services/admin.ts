@@ -48,16 +48,23 @@ export async function logAdminAction(input: LogInput): Promise<void> {
 
 export async function listAdminLogs(options: { page?: number; pageSize?: number } = {}) {
   const page = options.page ?? 1;
-  const pageSize = options.pageSize ?? 50;
+  const pageSize = Math.min(200, options.pageSize ?? 50);
   return db
     .select({
       id: adminLogs.id,
       actorId: adminLogs.actorId,
       actorName: users.name,
+      // Two accounts can share a display name, so the email is what actually
+      // identifies who did something — the point of an audit trail.
+      actorEmail: users.email,
       action: adminLogs.action,
       targetType: adminLogs.targetType,
       targetId: adminLogs.targetId,
       metaJson: adminLogs.metaJson,
+      // Already recorded on every write. Safe to surface: it is a keyed hash, not
+      // an address, so it answers "was this the same person?" without storing
+      // anything identifying.
+      ipHash: adminLogs.ipHash,
       createdAt: adminLogs.createdAt,
     })
     .from(adminLogs)
