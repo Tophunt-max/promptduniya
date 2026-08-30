@@ -9,6 +9,13 @@ import {
 } from '@pd/shared';
 import { clientIp, requireAdmin, requireEditor, withAccess, type Vars } from '../middleware';
 import { logAdminAction } from '../services/admin';
+import { imageProviderStatus } from '../services/images';
+import {
+  generateHouseModel,
+  generatePromptCover,
+  listHouseModels,
+  promptsMissingCovers,
+} from '../services/images/covers';
 import {
   adminGetPrompt,
   adminListPrompts,
@@ -495,6 +502,76 @@ admin.get('/upload/config', async (c) => {
     ok: true,
     data: { maxBytes: MAX_UPLOAD_BYTES, driver: storageMode(), allowed: [...ALLOWED_MIME_TYPES] },
   });
+});
+
+/* -------------------------- Image generation ---------------------------- */
+
+/**
+ * What is wired up, so the admin screen can explain itself rather than failing
+ * halfway through a batch.
+ */
+admin.get('/images/status', async (c) => {
+  requireEditor(c);
+  const [models, missing] = await Promise.all([listHouseModels(), promptsMissingCovers()]);
+  return c.json({
+    ok: true,
+    data: {
+      ...imageProviderStatus(),
+      houseModels: models,
+      missingCovers: missing,
+      missingCount: missing.length,
+    },
+  });
+});
+
+/**
+ * Generates a cover for one prompt.
+ *
+ * One prompt per request on purpose. Generation takes tens of seconds, so the
+ * admin client drives the loop and shows progress — a failure partway through a
+ * batch then costs one image rather than the whole run.
+ */
+admin.post('/prompts/:id/cover', async (c) => {
+  const claims = requireEditor(c);
+  const force = new URL(c.req.url).searchParams.get('force') === 'true';
+  const result = await generatePromptCover(c.req.param('id'), { force });
+
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'prompt.cover.generate',
+    targetType: 'prompt',
+    targetId: result.promptId,
+    // The engine is logged because a fallback can quietly swap providers, and a
+    // cover drawn by a different model looks different.
+    meta: { engine: result.engine, usedReference: result.usedReference, url: result.url },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: result }, 201);
+});
+
+/**
+ * Generates one synthetic house model — the reference face used for photo-edit
+ * covers. Run once per kind; re-running replaces it.
+ */
+admin.post('/images/house-models/:kind', async (c) => {
+  const claims = requireAdmin(c);
+  const kind = c.req.param('kind');
+  if (kind !== 'male' && kind !== 'female' && kind !== 'couple') {
+    throw AppError.badRequest('kind must be one of male, female, couple');
+  }
+
+  const result = await generateHouseModel(kind);
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'images.house_model.generate',
+    targetType: 'setting',
+    targetId: `images.house_model.${kind}`,
+    meta: { engine: result.engine, url: result.url },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: { kind, ...result } }, 201);
 });
 
 /* --------------------------- Billing records ---------------------------- */

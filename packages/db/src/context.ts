@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
-import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
+import type { Ai, D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
 
 import * as schema from './schema';
 
@@ -22,6 +22,11 @@ export interface CloudflareBindings {
   SESSIONS: KVNamespace;
   CACHE: KVNamespace;
   MEDIA: R2Bucket;
+  /**
+   * Workers AI. Optional because it is only needed by image generation, and a
+   * deployment that never generates a cover does not have to declare it.
+   */
+  AI?: Ai;
   [key: string]: unknown;
 }
 
@@ -33,6 +38,7 @@ export interface RequestContext {
     cache: KVNamespace;
   };
   r2: R2Bucket;
+  ai?: Ai;
   env: Record<string, string | undefined>;
 }
 
@@ -52,6 +58,7 @@ export function runWithBindings<T>(
       cache: bindings.CACHE,
     },
     r2: bindings.MEDIA,
+    ai: bindings.AI,
     env,
   };
   return storage.run(ctx, fn);
@@ -79,6 +86,17 @@ export function useKv() {
 
 export function useR2(): R2Bucket {
   return useRequestContext().r2;
+}
+
+/**
+ * Workers AI for the current request.
+ *
+ * Returns undefined when the binding is absent, so callers can fall back to a
+ * remote provider rather than crashing. Unlike an API key, this binding needs no
+ * secret — it authenticates as the Worker's own account.
+ */
+export function useAi(): Ai | undefined {
+  return useRequestContext().ai;
 }
 
 export function useEnv(): Record<string, string | undefined> {

@@ -21,6 +21,8 @@ export interface ApiConfig {
   razorpayWebhookSecret: string;
   aiProvider: string;
   aiApiKey: string;
+  /** Cover image generation: 'workers-ai' | 'gemini' | 'none'. */
+  imageProvider: string;
   emailProvider: string;
   r2PublicUrl: string;
 }
@@ -63,6 +65,7 @@ export function config(): ApiConfig {
     razorpayWebhookSecret: str(env, 'RAZORPAY_WEBHOOK_SECRET'),
     aiProvider: str(env, 'AI_PROVIDER', 'template'),
     aiApiKey: str(env, 'AI_API_KEY'),
+    imageProvider: str(env, 'IMAGE_PROVIDER', 'workers-ai'),
     emailProvider: str(env, 'EMAIL_PROVIDER', 'console'),
     r2PublicUrl: str(env, 'R2_PUBLIC_URL'),
   };

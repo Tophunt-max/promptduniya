@@ -29,6 +29,12 @@
     { "binding": "MEDIA", "bucket_name": "promptduniya-media" }
   ],
 
+  // ---- Workers AI (cover image generation) ----
+  // Needs no secret: the binding authenticates as this Worker's own account.
+  // Free allocation is 10,000 Neurons/day, which covers roughly a hundred
+  // flux-1-schnell images — more than enough to backfill the catalogue.
+  "ai": { "binding": "AI" },
+
   // ---- Nightly maintenance (publish scheduled, trending, expiries) ----
   // 19:30 UTC == 01:00 IST, the platform's quiet hour.
   "triggers": {
@@ -43,6 +49,11 @@
     "PAYMENTS_MOCK_MODE": "true",
     "PAYMENTS_CURRENCY": "INR",
     "AI_PROVIDER": "template",
+    // Cover image generation. "workers-ai" needs no key and is the default.
+    // Switch to "gemini" once AI_API_KEY is set — Gemini is the better choice
+    // for photo-edit prompts because it accepts a reference face, and because
+    // those prompts were written for Gemini in the first place.
+    "IMAGE_PROVIDER": "workers-ai",
     "EMAIL_PROVIDER": "console",
     "EMAIL_FROM": "promptduniya <no-reply@promptduniya.in>",
     "R2_PUBLIC_URL": "https://pub-9b6fa93bd9db48c4ae3ed41d617ef06d.r2.dev"

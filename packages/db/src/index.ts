@@ -6,6 +6,7 @@ export {
   useRequestContext,
   useKv,
   useR2,
+  useAi,
   useEnv,
   type Database,
   type RequestContext,
