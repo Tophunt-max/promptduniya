@@ -9,6 +9,7 @@ import {
   INPUT_MODES,
   STYLES,
 } from '@pd/shared';
+import { MediaIcon } from '@/components/icons';
 import {
   Alert,
   Button,
@@ -473,6 +474,99 @@ export function PromptEditPage() {
         </div>
 
         <div className="space-y-4">
+          {/* Ordered by what an operator actually reaches for.
+              Generation was originally last, below the URL and file fields, which
+              on a laptop put it under the fold — so the card read as "paste a URL
+              or upload a file" and the AI option looked as though it did not
+              exist. It is now the first thing in the card, and the manual routes
+              are the fallback they have become. */}
+          <Card title="Cover image">
+            <div className="space-y-4">
+              {form.coverImageUrl ? (
+                <img
+                  src={form.coverImageUrl}
+                  alt=""
+                  className="aspect-[4/5] w-full rounded-lg border border-[var(--border-line)] object-cover"
+                />
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-sunken)] px-3 py-3">
+                  <MediaIcon size={20} className="shrink-0 text-[var(--text-muted)]" />
+                  <p className="text-xs text-[var(--text-muted)]">
+                    No cover yet — generate one below.
+                  </p>
+                </div>
+              )}
+
+              {/* Generation reads the prompt's stored columns to build its
+                  instruction, so it needs a saved row — there is nothing to
+                  describe on an unsaved draft. */}
+              {id ? (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    className="w-full"
+                    loading={generatingCover}
+                    onClick={() => void generateCover()}
+                  >
+                    {form.coverImageUrl ? 'Regenerate cover with AI' : 'Generate cover with AI'}
+                  </Button>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Built from this prompt&rsquo;s own scene, lighting and camera settings. The
+                    subject is always an adult Indian person. Takes a few seconds.
+                  </p>
+                  {coverNote && (
+                    <p className="rounded-lg bg-[var(--surface-sunken)] px-2.5 py-2 text-xs text-[var(--text-body)]">
+                      {coverNote}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="rounded-lg bg-[var(--surface-sunken)] px-2.5 py-2 text-xs text-[var(--text-muted)]">
+                  Save the prompt first, then a cover can be generated from it.
+                </p>
+              )}
+
+              <div className="border-t border-[var(--border-line)] pt-4">
+                <p className="mb-2.5 text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                  Or set it manually
+                </p>
+
+                <Field label="Upload a file" hint="JPEG, PNG, WebP, AVIF or GIF up to 8 MB.">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadCover(file);
+                    }}
+                  />
+                </Field>
+
+                {uploading && (
+                  <p className="mt-1.5 text-xs text-[var(--text-muted)]">Uploading…</p>
+                )}
+
+                <div className="mt-3">
+                  <Field label="Image URL" error={fieldErrors.coverImageUrl}>
+                    <Input
+                      value={form.coverImageUrl}
+                      placeholder="https://…"
+                      onChange={(e) => set('coverImageUrl', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+
+              <Field label="Alt text" error={fieldErrors.coverImageAlt}>
+                <Input
+                  value={form.coverImageAlt}
+                  onChange={(e) => set('coverImageAlt', e.target.value)}
+                />
+              </Field>
+            </div>
+          </Card>
+
           <Card title="Visibility">
             <div className="space-y-3">
               <Checkbox
@@ -500,67 +594,6 @@ export function PromptEditPage() {
                 checked={form.isEditorsPick}
                 onChange={(e) => set('isEditorsPick', e.target.checked)}
               />
-            </div>
-          </Card>
-
-          <Card title="Cover image">
-            <div className="space-y-3">
-              {form.coverImageUrl && (
-                <img
-                  src={form.coverImageUrl}
-                  alt=""
-                  className="aspect-4/5 w-full rounded-lg border border-line object-cover"
-                />
-              )}
-
-              <Field label="Image URL" error={fieldErrors.coverImageUrl}>
-                <Input
-                  value={form.coverImageUrl}
-                  onChange={(e) => set('coverImageUrl', e.target.value)}
-                />
-              </Field>
-
-              <Field label="Upload" hint="JPEG, PNG, WebP, AVIF or GIF up to 8 MB.">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  disabled={uploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void uploadCover(file);
-                  }}
-                />
-              </Field>
-
-              {/* Generation only works on a saved prompt: the endpoint reads the
-                  stored columns to build its instruction, so an unsaved draft has
-                  nothing to describe. */}
-              {id && id !== 'new' && (
-                <div className="space-y-2 rounded-lg border border-line bg-subtle p-3">
-                  <p className="text-xs text-muted">
-                    Generate a cover from this prompt&rsquo;s own scene, style and lighting. The
-                    subject is always an adult Indian person.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={generatingCover}
-                    onClick={() => void generateCover()}
-                  >
-                    {generatingCover ? 'Generating…' : 'Generate cover with AI'}
-                  </Button>
-                  {coverNote && <p className="text-xs text-muted">{coverNote}</p>}
-                </div>
-              )}
-
-              {uploading && <p className="text-xs text-muted">Uploading…</p>}
-
-              <Field label="Alt text" error={fieldErrors.coverImageAlt}>
-                <Input
-                  value={form.coverImageAlt}
-                  onChange={(e) => set('coverImageAlt', e.target.value)}
-                />
-              </Field>
             </div>
           </Card>
         </div>
