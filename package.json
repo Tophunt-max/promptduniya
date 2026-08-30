@@ -22,6 +22,7 @@
     "build:admin": "npm run build --workspace apps/admin",
     "provision": "node scripts/provision.mjs",
     "provision:dry-run": "node scripts/provision.mjs --dry-run",
+    "covers:upload": "node scripts/upload-covers.mjs",
     "deploy:api": "npm run deploy --workspace apps/api",
     "deploy:web": "npm run deploy --workspace apps/web",
     "deploy:admin": "npm run deploy --workspace apps/admin",
