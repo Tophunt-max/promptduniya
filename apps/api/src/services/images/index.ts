@@ -1,7 +1,7 @@
 import { useAi } from '@pd/db';
 
-import { config } from '../../lib/env';
 import { AppError } from '../../lib/errors';
+import { getAiConfig } from '../ai-providers';
 import { GeminiImageEngine } from './gemini';
 import { WorkersAiEngine } from './workers-ai';
 import type { GeneratedImage, ImageEngine, ImageRequest } from './types';
@@ -49,58 +49,68 @@ class ResilientImageEngine implements ImageEngine {
 }
 
 /** True when the engine about to be used can preserve a face. */
-export function imageEngineSupportsReference(): boolean {
-  return resolveImageEngine().supportsReference;
+export async function imageEngineSupportsReference(): Promise<boolean> {
+  const engine = await resolveImageEngine();
+  return engine.supportsReference;
 }
 
-export function resolveImageEngine(): ImageEngine {
-  const c = config();
-  const geminiReady = Boolean(c.aiApiKey);
+/**
+ * The configured image engine, with the other provider behind it as a fallback.
+ *
+ * Async now because provider, model and key all come from settings rather than
+ * from `wrangler.jsonc` — see services/ai-providers.ts. Both call sites were
+ * already async.
+ */
+export async function resolveImageEngine(): Promise<ImageEngine> {
+  const c = await getAiConfig();
+  const geminiReady = Boolean(c.geminiApiKey);
   const workersReady = Boolean(useAi());
 
+  const gemini = () => new GeminiImageEngine(c.geminiApiKey, c.geminiImageModel);
+  const workers = () => new WorkersAiEngine(c.workersImageModel);
+
   if (c.imageProvider === 'none') {
-    throw AppError.badRequest('Image generation is disabled (IMAGE_PROVIDER is "none").');
+    throw AppError.badRequest(
+      'Image generation is switched off. Choose an image provider on the AI providers screen.',
+    );
   }
 
   if (c.imageProvider === 'gemini') {
     if (!geminiReady) {
       throw AppError.badRequest(
-        'IMAGE_PROVIDER is "gemini" but AI_API_KEY is not set. Create a free key at aistudio.google.com/apikey.',
+        'The image provider is set to Gemini but no Gemini API key is configured. Add one on the AI providers screen.',
       );
     }
-    return new ResilientImageEngine(
-      new GeminiImageEngine(),
-      workersReady ? new WorkersAiEngine() : null,
-    );
+    return new ResilientImageEngine(gemini(), workersReady ? workers() : null);
   }
 
   // Default: Workers AI, because it works with no key at all.
   if (!workersReady && !geminiReady) {
     throw AppError.badRequest(
-      'No image provider available. Bind Workers AI ("ai": { "binding": "AI" }) or set AI_API_KEY.',
+      'No image provider is available. Add a Gemini API key on the AI providers screen, or bind Workers AI ("ai": { "binding": "AI" }).',
     );
   }
-  if (!workersReady) return new GeminiImageEngine();
-  return new ResilientImageEngine(
-    new WorkersAiEngine(),
-    geminiReady ? new GeminiImageEngine() : null,
-  );
+  if (!workersReady) return gemini();
+  return new ResilientImageEngine(workers(), geminiReady ? gemini() : null);
 }
 
-/** Reported by the admin settings screen so operators can see what is wired up. */
-export function imageProviderStatus(): {
+/** Reported by the admin screens so operators can see what is wired up. */
+export async function imageProviderStatus(): Promise<{
   provider: string;
   workersAi: boolean;
   gemini: boolean;
   supportsReference: boolean;
-} {
-  const c = config();
+  model: string;
+}> {
+  const c = await getAiConfig();
   const workersAi = Boolean(useAi());
-  const gemini = Boolean(c.aiApiKey);
+  const gemini = Boolean(c.geminiApiKey);
   return {
     provider: c.imageProvider,
     workersAi,
     gemini,
+    // Only Gemini can hold an uploaded face, so photo-edit covers depend on it.
     supportsReference: c.imageProvider === 'gemini' ? gemini : false,
+    model: c.imageProvider === 'gemini' ? c.geminiImageModel : c.workersImageModel,
   };
 }

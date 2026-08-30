@@ -265,7 +265,7 @@ function houseModelFor(gender: string | null): HouseModelKind | null {
 }
 
 export async function generateHouseModel(kind: HouseModelKind): Promise<{ url: string; engine: string }> {
-  const engine = resolveImageEngine();
+  const engine = await resolveImageEngine();
   const image = await engine.generate({
     instruction: HOUSE_MODEL_BRIEFS[kind],
     negative: BASE_NEGATIVE,
@@ -351,7 +351,7 @@ export async function generatePromptCover(
     );
   }
 
-  const engine = resolveImageEngine();
+  const engine = await resolveImageEngine();
 
   // A reference face is only worth loading when the prompt is a photo-edit one
   // and the engine can actually use it.

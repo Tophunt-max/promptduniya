@@ -170,6 +170,10 @@ POST   /v1/admin/upload                   GET /v1/admin/upload/config
 GET    /v1/admin/settings                 PUT /v1/admin/settings
 GET    /v1/admin/studio/status            POST /v1/admin/studio/draft · studio/run
 
+# AI providers  (admin only; keys are write-only and never returned)
+GET    /v1/admin/ai-config                PUT /v1/admin/ai-config
+POST   /v1/admin/ai-config/test
+
 # AI content automation  (editor; config is admin-only)
 GET    /v1/admin/automation/overview      GET/PUT /v1/admin/automation/config
 GET    /v1/admin/automation/queue · queue/counts
@@ -183,6 +187,31 @@ POST   /v1/webhooks/razorpay   (HMAC-verified, idempotent, no CORS/auth)
 POST   /v1/cron/maintenance    (x-cron-secret; also runs on the nightly trigger)
 POST   /v1/cron/hourly         (x-cron-secret; also runs on the hourly trigger)
 ```
+
+## AI providers
+
+Which service writes the prompts, which one draws the covers, which model each
+uses, and the API keys they need are all configured from **Admin → AI providers**.
+None of it requires a redeploy.
+
+- **Keys** are entered in the console and stored encrypted at rest. They are
+  write-only: every endpoint returns whether a key exists, where it came from and
+  its last four characters — never the value. A key saved here takes priority over
+  a deployed `AI_API_KEY` / `OPENAI_API_KEY` secret, and clearing it falls back to
+  that secret, so an existing deployment keeps working untouched.
+- **Models** are free text with presets as one-click fills, not a dropdown.
+  Providers retire models on their own schedule — this codebase already lost
+  production time to a pinned Workers AI model being deprecated — so recovering
+  from the next deprecation should be typing an id, not shipping a release. The
+  Workers AI entry is a comma-separated chain tried in order for the same reason.
+- **Test** sends one throwaway prompt to a named provider and reports the model,
+  the latency and the provider's own error. Without it, checking a pasted key meant
+  starting a studio run and waiting a minute to learn whether the problem was the
+  key, the model id, the quota or the prompt.
+
+Defaults match what the engines previously hardcoded (`gemini-2.0-flash`,
+`gpt-4o-mini`, `flux-1-schnell`), so turning this on changes nothing until you
+change something.
 
 ## AI content automation
 

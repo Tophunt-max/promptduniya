@@ -88,6 +88,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'System',
     items: [
+      { to: '/ai-providers', label: 'AI providers', icon: SparkleIcon, adminOnly: true },
       { to: '/logs', label: 'Audit log', icon: LogsIcon, adminOnly: true },
       { to: '/settings', label: 'Settings', icon: SettingsIcon, adminOnly: true },
     ],

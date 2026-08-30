@@ -115,7 +115,7 @@ export async function regeneratePromptSeo(promptId: string): Promise<ReseoResult
   const prompt = rows[0];
   if (!prompt) throw AppError.notFound('Prompt not found');
 
-  const engine = resolveTextEngine();
+  const engine = await resolveTextEngine();
   const reply = await engine.complete({
     system: SYSTEM,
     user: userMessage({

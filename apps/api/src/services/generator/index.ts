@@ -53,7 +53,7 @@ export async function generatePrompt(input: {
   }
 
   const canUseAi = hasFeature(access, FEATURES.advancedGenerator);
-  const engine = form.useAi && canUseAi ? resolveEngine() : templateEngine;
+  const engine = form.useAi && canUseAi ? await resolveEngine() : templateEngine;
   const result = await engine.generate(form);
 
   const id = newId();

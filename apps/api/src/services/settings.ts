@@ -1,5 +1,5 @@
 import { db, siteSettings } from '@pd/db';
-import { SETTING_KEYS } from '@pd/shared';
+import { AI_SECRET_SETTING_KEYS, SETTING_KEYS } from '@pd/shared';
 import { eq } from 'drizzle-orm';
 
 /**
@@ -156,4 +156,36 @@ export async function getPublicSettings(): Promise<Record<string, SettingValue>>
     // Table not migrated yet — an empty map is the correct answer.
   }
   return values;
+}
+
+
+
+/* =============================== Redaction ============================== */
+
+/**
+ * Strips secret-bearing settings from a values map before it leaves the API.
+ *
+ * `GET /v1/admin/settings` returns the whole settings map, and provider API keys
+ * are now stored in that table so they can be entered from the console. Without
+ * this, every visit to the settings screen would ship a live Gemini or OpenAI key
+ * to the browser — into memory, into any devtools session, and into anything that
+ * logs responses.
+ *
+ * Applied at the boundary rather than inside `getSettings()` on purpose: the
+ * service layer legitimately needs the real values (see
+ * services/ai-providers.ts), so redaction belongs where the data becomes a
+ * response, not where it becomes available.
+ *
+ * The keys are replaced rather than deleted, so the screen can still show that a
+ * value exists without being able to read it.
+ */
+export function redactSecretSettings(
+  values: Record<string, SettingValue>,
+): Record<string, SettingValue> {
+  const out = { ...values };
+  for (const key of AI_SECRET_SETTING_KEYS) {
+    if (out[key] === undefined) continue;
+    out[key] = String(out[key]) ? '__set__' : '';
+  }
+  return out;
 }

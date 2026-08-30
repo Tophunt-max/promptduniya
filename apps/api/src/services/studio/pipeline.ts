@@ -259,10 +259,14 @@ export async function runStudioPipeline(input: StudioRunInput): Promise<StudioRu
   };
 }
 
-/** Everything the studio screen needs to explain itself before a run. */
-export function studioStatus() {
-  const text = textProviderStatus();
-  const image = imageProviderStatus();
+/**
+ * Everything the studio screen needs to explain itself before a run.
+ *
+ * Async since provider configuration moved into the database. The two status
+ * calls are independent, so they run together.
+ */
+export async function studioStatus() {
+  const [text, image] = await Promise.all([textProviderStatus(), imageProviderStatus()]);
   return {
     text,
     image,

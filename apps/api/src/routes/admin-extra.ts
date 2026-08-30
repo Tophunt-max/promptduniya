@@ -1,11 +1,19 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 
-import { cleanText, idSchema, paginationSchema } from '@pd/shared';
+import {
+  GENERATOR_PROVIDERS,
+  IMAGE_PROVIDERS,
+  TEXT_PROVIDERS,
+  cleanText,
+  idSchema,
+  paginationSchema,
+} from '@pd/shared';
 
 import { clientIp, limit, requireAdmin, requireEditor, withAccess, type Vars } from '../middleware';
 import { AppError } from '../lib/errors';
 import { logAdminAction } from '../services/admin';
+import { aiProviderStatus, setAiConfig, testProvider } from '../services/ai-providers';
 import {
   BROADCAST_SEGMENTS,
   SEGMENT_LABELS,
@@ -610,3 +618,95 @@ extra.post('/subscriptions/:id/cancel', async (c) => {
 });
 
 export default extra;
+
+
+/* ============================== AI providers ============================== */
+
+/**
+ * Provider, model and key configuration.
+ *
+ * Administrator-only in full. These settings decide which account's AI budget
+ * gets spent and hold the credentials to spend it, which puts them in the same
+ * bracket as billing rather than content.
+ *
+ * `GET` never returns a key — only whether one is present, where it came from,
+ * and its last four characters. See `aiProviderStatus()`.
+ */
+extra.get('/ai-config', async (c) => {
+  requireAdmin(c);
+  return c.json({ ok: true, data: await aiProviderStatus() });
+});
+
+extra.put('/ai-config', async (c) => {
+  const claims = requireAdmin(c);
+  await limit(c, 'adminWrite');
+
+  const body = z
+    .object({
+      textProvider: z.enum(TEXT_PROVIDERS).optional(),
+      imageProvider: z.enum(IMAGE_PROVIDERS).optional(),
+      generatorProvider: z.enum(GENERATOR_PROVIDERS).optional(),
+      geminiTextModel: z.string().trim().max(200).optional(),
+      openaiTextModel: z.string().trim().max(200).optional(),
+      workersTextModels: z.string().trim().max(600).optional(),
+      geminiImageModel: z.string().trim().max(200).optional(),
+      workersImageModel: z.string().trim().max(200).optional(),
+      // An empty string is meaningful: it clears the stored key so the
+      // environment secret takes over again.
+      geminiApiKey: z.string().max(400).optional(),
+      openaiApiKey: z.string().max(400).optional(),
+    })
+    .parse(await c.req.json());
+
+  const status = await setAiConfig(body, claims.sub);
+
+  // The audit entry records *that* a key changed and never the value. Everything
+  // written here is a scalar the operator chose, so the rest is safe to keep.
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'ai.config.update',
+    targetType: 'setting',
+    targetId: 'ai',
+    meta: {
+      keys: Object.keys(body).filter((key) => !key.toLowerCase().includes('apikey')),
+      geminiKeyChanged: body.geminiApiKey !== undefined,
+      openaiKeyChanged: body.openaiApiKey !== undefined,
+      textProvider: status.textProvider,
+      imageProvider: status.imageProvider,
+    },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: status });
+});
+
+/**
+ * Sends one throwaway prompt to a named provider and reports the outcome.
+ *
+ * Exists because every other path that uses a key is slow and indirect: without
+ * it, checking a pasted key means starting a studio run and waiting a minute to
+ * learn whether the problem was the key, the model id, the quota or the prompt.
+ *
+ * Carries the AI rate limit, since it does spend a request.
+ */
+extra.post('/ai-config/test', async (c) => {
+  const claims = requireAdmin(c);
+  await limit(c, 'aiDiscover');
+
+  const body = z
+    .object({ provider: z.enum(TEXT_PROVIDERS) })
+    .parse(await c.req.json());
+
+  const result = await testProvider(body.provider);
+
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'ai.config.test',
+    targetType: 'setting',
+    targetId: body.provider,
+    meta: { ok: result.ok, model: result.model, durationMs: result.durationMs },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: result });
+});

@@ -227,7 +227,7 @@ export async function generateIdeas(options: IdeaOptions): Promise<GeneratedIdea
   let parsed: ParsedIdea[] = [];
 
   try {
-    const engine = resolveTextEngine();
+    const engine = await resolveTextEngine();
     engineName = engine.name;
 
     const reply = await engine.complete({

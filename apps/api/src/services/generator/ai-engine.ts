@@ -1,6 +1,6 @@
 import type { GeneratorInput } from '@pd/shared';
 
-import { config } from '../../lib/env';
+import { getAiConfig } from '../ai-providers';
 import { templateEngine } from './template-engine';
 import type { GeneratedResult, GeneratorEngine } from './types';
 
@@ -56,13 +56,22 @@ function parse(raw: string): { title?: string; prompt?: string; negativePrompt?:
 
 class GeminiEngine implements GeneratorEngine {
   readonly name = 'gemini';
+
+  /**
+   * Key and model are injected rather than read from the environment, so the
+   * public generator honours whatever the admin console has configured instead of
+   * pinning `gemini-2.0-flash` forever. See services/ai-providers.ts.
+   */
+  constructor(
+    private readonly apiKey: string,
+    private readonly model: string,
+  ) {}
+
   async generate(input: GeneratorInput): Promise<GeneratedResult> {
-    const c = config();
     const base = 'https://generativelanguage.googleapis.com/v1beta';
-    const model = 'gemini-2.0-flash';
-    const res = await fetch(`${base}/models/${model}:generateContent`, {
+    const res = await fetch(`${base}/models/${encodeURIComponent(this.model)}:generateContent`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': c.aiApiKey },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM }] },
         contents: [{ role: 'user', parts: [{ text: brief(input) }] }],
@@ -100,13 +109,15 @@ class ResilientEngine implements GeneratorEngine {
   }
 }
 
-export function resolveEngine(): GeneratorEngine {
-  const c = config();
-  if (c.aiProvider === 'gemini' && c.aiApiKey) return new ResilientEngine(new GeminiEngine());
+export async function resolveEngine(): Promise<GeneratorEngine> {
+  const c = await getAiConfig();
+  if (c.generatorProvider === 'gemini' && c.geminiApiKey) {
+    return new ResilientEngine(new GeminiEngine(c.geminiApiKey, c.geminiTextModel));
+  }
   return templateEngine;
 }
 
-export function aiConfigured(): boolean {
-  const c = config();
-  return c.aiProvider !== 'template' && Boolean(c.aiApiKey);
+export async function aiConfigured(): Promise<boolean> {
+  const c = await getAiConfig();
+  return c.generatorProvider !== 'template' && Boolean(c.geminiApiKey);
 }
