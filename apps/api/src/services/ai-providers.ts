@@ -80,14 +80,29 @@ export const IMAGE_MODEL_PRESETS: Record<'gemini' | 'workers-ai', ModelPreset[]>
     {
       id: 'gemini-2.5-flash-image',
       label: 'Gemini 2.5 Flash Image',
-      note: 'Accepts a reference face — required for photo-edit covers',
+      note: 'Accepts a reference face — required for photo-edit covers. Legacy, but free tier',
+    },
+    {
+      id: 'gemini-3.1-flash-image-preview',
+      label: 'Gemini 3.1 Flash Image',
+      note: 'Current fast image model. Also accepts a reference face',
+    },
+    {
+      id: 'gemini-3-pro-image',
+      label: 'Gemini 3 Pro Image',
+      note: 'Highest quality Google offers. Paid tier only',
     },
   ],
   'workers-ai': [
     {
+      id: '@cf/leonardo/lucid-origin',
+      label: 'Lucid Origin (Leonardo)',
+      note: 'Best realism here — real skin texture, honours the 4:5 frame. Billed per image',
+    },
+    {
       id: '@cf/black-forest-labs/flux-1-schnell',
       label: 'FLUX.1 schnell',
-      note: 'No key needed. Text-to-image only, no reference face',
+      note: 'Cheapest, inside the free Neuron allowance. Square only, visibly softer faces',
     },
     { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', label: 'SDXL base 1.0' },
   ],
@@ -96,13 +111,16 @@ export const IMAGE_MODEL_PRESETS: Record<'gemini' | 'workers-ai', ModelPreset[]>
 /* --------------------------------- Defaults -------------------------------- */
 
 /**
- * Fallbacks, matching what the engines used to hardcode.
+ * Fallbacks used until an operator sets something explicitly.
  *
- * Keeping them identical means turning this feature on changes nothing until an
- * operator deliberately changes something.
+ * These have to track the providers' live catalogues, which is the whole reason
+ * model ids are free text here. `gemini-2.0-flash` sat in this list after Google
+ * retired it, so a fresh install defaulted to a model that answers every request
+ * with a 404 — and the image default was the oldest and softest model available
+ * rather than the best one.
  */
 export const AI_DEFAULTS = {
-  geminiTextModel: 'gemini-2.0-flash',
+  geminiTextModel: 'gemini-3.6-flash',
   openaiTextModel: 'gpt-4o-mini',
   workersTextModels: [
     '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
@@ -110,7 +128,13 @@ export const AI_DEFAULTS = {
     '@cf/google/gemma-4-26b-a4b-it',
   ],
   geminiImageModel: 'gemini-2.5-flash-image',
-  workersImageModel: '@cf/black-forest-labs/flux-1-schnell',
+  // Lucid Origin over flux-1-schnell. schnell is a distilled 8-step model with
+  // no dimension control: it renders portrait skin flat and plastic and always
+  // returns a square, which is what made generated covers look unusable next to
+  // the prompt they were illustrating. Lucid Origin is billed per image rather
+  // than drawn from the free Neuron allowance — a deliberate trade, since a
+  // cover is the one image a reader judges the prompt by.
+  workersImageModel: '@cf/leonardo/lucid-origin',
 } as const;
 
 /* -------------------------------- Resolution ------------------------------- */

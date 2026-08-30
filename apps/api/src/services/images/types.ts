@@ -33,6 +33,16 @@ export interface GeneratedImage {
   engine: string;
   /** False when a reference face was supplied but the engine could not use it. */
   usedReference: boolean;
+  /**
+   * Why the preferred engine was not used, when a fallback produced the bytes.
+   *
+   * The engine name alone said *that* a fallback ran but never *why*, and the
+   * reason only reached `console.warn` — invisible from the console that asked
+   * for the image. A cover silently produced by a weaker model is the failure
+   * this surfaces: it looks like a quality problem in the prompt rather than a
+   * misconfigured or retired model id.
+   */
+  fallbackReason?: string;
 }
 
 export interface ImageEngine {

@@ -38,12 +38,16 @@ class ResilientImageEngine implements ImageEngine {
       return await this.primary.generate(request);
     } catch (error) {
       if (!this.secondary) throw error;
-      console.warn(
-        `[images] ${this.primary.name} failed, trying ${this.secondary.name}:`,
-        error instanceof Error ? error.message : error,
-      );
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[images] ${this.primary.name} failed, trying ${this.secondary.name}:`, reason);
       const result = await this.secondary.generate(request);
-      return { ...result, engine: `${this.primary.name}-fallback:${result.engine}` };
+      return {
+        ...result,
+        engine: `${this.primary.name}-fallback:${result.engine}`,
+        // Carried back to the caller so the admin screen and the audit log can
+        // say why the cover came from the weaker model.
+        fallbackReason: `${this.primary.name} failed: ${reason}`,
+      };
     }
   }
 }

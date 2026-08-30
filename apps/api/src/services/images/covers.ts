@@ -326,6 +326,8 @@ export interface CoverResult {
   engine: string;
   usedReference: boolean;
   instruction: string;
+  /** Set when a fallback engine produced this cover. See `GeneratedImage`. */
+  fallbackReason?: string;
 }
 
 /**
@@ -394,6 +396,7 @@ export async function generatePromptCover(
     engine: image.engine,
     usedReference: image.usedReference,
     instruction,
+    ...(image.fallbackReason ? { fallbackReason: image.fallbackReason } : {}),
   };
 }
 

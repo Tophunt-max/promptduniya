@@ -92,8 +92,21 @@ export class GeminiImageEngine implements ImageEngine {
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
       if (response.status === 429) {
+        // The provider's own text is the only thing that distinguishes "today's
+        // free allowance is used up, retry tomorrow" from "this model has no
+        // free allowance at all, so it will never succeed on this key". Both
+        // arrive as 429 and the canned message hid the difference, which read as
+        // an intermittent quota blip while every cover silently came from the
+        // fallback model instead.
         throw AppError.badRequest(
-          'Gemini rate limit reached. The free tier allows a few hundred images a day — wait and retry, or switch IMAGE_PROVIDER to "workers-ai".',
+          `Gemini refused the request for "${this.model}" with a quota error (429). ` +
+            `Either today's allowance is exhausted or this model is not available on this key's tier. ` +
+            `Provider detail: ${detail.slice(0, 400) || '(none)'}`,
+        );
+      }
+      if (response.status === 404) {
+        throw AppError.badRequest(
+          `Gemini does not recognise the image model "${this.model}". Check the model id on the AI providers screen.`,
         );
       }
       throw AppError.badRequest(`Gemini responded ${response.status}: ${detail.slice(0, 300)}`);

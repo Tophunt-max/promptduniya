@@ -76,18 +76,29 @@ async function editorToken(email = 'editor@example.com'): Promise<string> {
 /* ------------------------------- Resolution -------------------------------- */
 
 describe('AI configuration resolution', () => {
-  it('falls back to the values the engines used to hardcode', async () => {
+  it('falls back to the current default model for every provider', async () => {
     const config = await withBindings(async () => {
       const { getAiConfig } = await import('../src/services/ai-providers');
       return await getAiConfig();
     });
 
-    // Turning this feature on must not change how an existing deployment behaves.
-    expect(config.geminiTextModel).toBe('gemini-2.0-flash');
-    expect(config.openaiTextModel).toBe('gpt-4o-mini');
-    expect(config.geminiImageModel).toBe('gemini-2.5-flash-image');
-    expect(config.workersImageModel).toBe('@cf/black-forest-labs/flux-1-schnell');
-    expect(config.workersTextModels[0]).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+    // These track the providers' live catalogues rather than what the engines
+    // once hardcoded. The previous expectation pinned `gemini-2.0-flash`, which
+    // Google has since retired — the assertion passed while the default it was
+    // protecting returned 404 for every call.
+    const { AI_DEFAULTS } = await import('../src/services/ai-providers');
+    expect(config.geminiTextModel).toBe(AI_DEFAULTS.geminiTextModel);
+    expect(config.openaiTextModel).toBe(AI_DEFAULTS.openaiTextModel);
+    expect(config.geminiImageModel).toBe(AI_DEFAULTS.geminiImageModel);
+    expect(config.workersImageModel).toBe(AI_DEFAULTS.workersImageModel);
+    expect(config.workersTextModels[0]).toBe(AI_DEFAULTS.workersTextModels[0]);
+
+    // The image default has to be one the engine knows how to drive — a model
+    // whose schema it cannot fill is a cover that never renders.
+    const { dimensionsFor } = await import('../src/services/images/workers-ai');
+    expect(dimensionsFor('4:5')).toEqual({ width: 1024, height: 1280 });
+    // Unparseable input must not produce a square by accident.
+    expect(dimensionsFor(undefined).height).toBeGreaterThan(dimensionsFor(undefined).width);
   });
 
   it('prefers a stored provider and model over the deployed default', async () => {

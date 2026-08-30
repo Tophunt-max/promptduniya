@@ -553,8 +553,15 @@ admin.post('/prompts/:id/cover', async (c) => {
     targetType: 'prompt',
     targetId: result.promptId,
     // The engine is logged because a fallback can quietly swap providers, and a
-    // cover drawn by a different model looks different.
-    meta: { engine: result.engine, usedReference: result.usedReference, url: result.url },
+    // cover drawn by a different model looks different. `fallbackReason` records
+    // why, which is the part that was missing when covers silently came back
+    // from the weaker model and looked like a prompt-quality problem.
+    meta: {
+      engine: result.engine,
+      usedReference: result.usedReference,
+      url: result.url,
+      ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
+    },
     ip: clientIp(c),
   });
 
