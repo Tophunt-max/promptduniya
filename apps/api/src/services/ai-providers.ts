@@ -95,16 +95,50 @@ export const IMAGE_MODEL_PRESETS: Record<'gemini' | 'workers-ai', ModelPreset[]>
   ],
   'workers-ai': [
     {
+      id: '@cf/black-forest-labs/flux-2-dev',
+      label: 'FLUX.2 dev',
+      note: 'Highest fidelity here, and the only Workers AI model that can hold a face for photo-edit covers. Slowest',
+    },
+    {
+      id: '@cf/black-forest-labs/flux-2-klein-9b',
+      label: 'FLUX.2 klein 9B',
+      note: 'Distilled FLUX.2 — most of the quality, far quicker. Takes a reference face',
+    },
+    {
+      id: '@cf/black-forest-labs/flux-2-klein-4b',
+      label: 'FLUX.2 klein 4B',
+      note: 'Fastest FLUX.2. Fixed at 4 steps, so quality is not tunable',
+    },
+    {
       id: '@cf/leonardo/lucid-origin',
       label: 'Lucid Origin (Leonardo)',
-      note: 'Best realism here — real skin texture, honours the 4:5 frame. Billed per image',
+      note: 'Excellent realism and prompt adherence. Honours the 4:5 frame. Billed per image',
+    },
+    {
+      id: '@cf/leonardo/phoenix-1.0',
+      label: 'Phoenix 1.0 (Leonardo)',
+      note: 'Strong prompt adherence, cheaper than Lucid Origin. Accepts a negative prompt',
+    },
+    {
+      id: '@cf/lykon/dreamshaper-8-lcm',
+      label: 'DreamShaper 8 LCM',
+      note: 'Stable Diffusion tuned for photorealism. Free allowance, older and lower resolution',
     },
     {
       id: '@cf/black-forest-labs/flux-1-schnell',
       label: 'FLUX.1 schnell',
       note: 'Cheapest, inside the free Neuron allowance. Square only, visibly softer faces',
     },
-    { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', label: 'SDXL base 1.0' },
+    {
+      id: '@cf/stabilityai/stable-diffusion-xl-base-1.0',
+      label: 'SDXL base 1.0',
+      note: 'Free allowance. Accepts a negative prompt',
+    },
+    {
+      id: '@cf/bytedance/stable-diffusion-xl-lightning',
+      label: 'SDXL Lightning',
+      note: 'Free allowance, 8 steps — quickest of the Stable Diffusion options',
+    },
   ],
 };
 

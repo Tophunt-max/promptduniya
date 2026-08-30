@@ -3,7 +3,7 @@ import { useAi } from '@pd/db';
 import { AppError } from '../../lib/errors';
 import { getAiConfig } from '../ai-providers';
 import { GeminiImageEngine } from './gemini';
-import { WorkersAiEngine } from './workers-ai';
+import { profileFor, WorkersAiEngine } from './workers-ai';
 import type { GeneratedImage, ImageEngine, ImageRequest } from './types';
 
 export type { GeneratedImage, ImageEngine, ImageRequest, ReferenceImage } from './types';
@@ -113,8 +113,12 @@ export async function imageProviderStatus(): Promise<{
     provider: c.imageProvider,
     workersAi,
     gemini,
-    // Only Gemini can hold an uploaded face, so photo-edit covers depend on it.
-    supportsReference: c.imageProvider === 'gemini' ? gemini : false,
+    // Gemini is no longer the only way to hold an uploaded face — the FLUX.2
+    // models take reference images too. Asking the profile rather than assuming
+    // keeps this honest: it decided whether photo-edit covers load a house
+    // model at all, and hardcoding `false` for Workers AI meant they never did.
+    supportsReference:
+      c.imageProvider === 'gemini' ? gemini : workersAi && profileFor(c.workersImageModel).reference,
     model: c.imageProvider === 'gemini' ? c.geminiImageModel : c.workersImageModel,
   };
 }
