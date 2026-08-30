@@ -4,7 +4,7 @@ import { aiModel } from '@/lib/constants';
 import { cn, formatCompact } from '@/lib/utils';
 import type { PromptCardData } from '@/services/prompts';
 import { EditorsPickBadge, ModelBadge, PremiumBadge, TrendingBadge } from '../ui/badge';
-import { CopyIcon, EyeIcon, LockIcon } from '../ui/icon';
+import { CopyIcon, EyeIcon } from '../ui/icon';
 import { CopyPromptButton, FavoriteButton, LikeButton } from './prompt-actions';
 import { PromptArtwork } from './prompt-artwork';
 
@@ -46,6 +46,8 @@ export function PromptCard({ prompt, locked, priority, compact, className }: Pro
             ratio={compact ? 'square' : 'portrait'}
             priority={priority}
             locked={locked}
+            category={prompt.categorySlug}
+            style={prompt.style}
           />
         </Link>
 
@@ -73,38 +75,51 @@ export function PromptCard({ prompt, locked, priority, compact, className }: Pro
           />
         </div>
 
-        {locked && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <span className="flex items-center gap-1.5 rounded-full bg-ink-950/70 px-3 py-1.5 text-xs font-bold text-white backdrop-blur">
-              <LockIcon size={13} />
-              Premium
-            </span>
-          </div>
-        )}
+        {/* A locked card previously carried four separate premium signals: the
+            top-left badge, the blurred artwork, a black pill floating dead centre
+            and the "Unlock to copy" button. The centre pill was the redundant
+            one — and the worst looking, since it sat as an opaque blob over the
+            blur. The other three say it clearly enough. */}
       </div>
 
-      <div className={cn('flex flex-1 flex-col gap-2 p-3.5', compact && 'gap-1.5 p-3')}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <ModelBadge model={prompt.aiModel} />
+      {/* Title first, then supporting metadata.
+          Previously the model and category chips sat above the title, so the
+          loudest element in the card was a badge and the actual prompt name came
+          second at 14px. The title now leads at 15px, and the style — which used
+          to be crushed into the right-hand end of the stats row — has moved onto
+          the artwork as a caption. */}
+      <div className={cn('flex flex-1 flex-col gap-1.5 p-3.5', compact && 'gap-1 p-3')}>
+        <h3
+          className={cn(
+            'font-bold leading-snug tracking-[-0.015em]',
+            compact ? 'text-[0.8125rem]' : 'text-[0.9375rem]',
+          )}
+        >
           <Link
-            href={`/category/${prompt.categorySlug}`}
-            className="rounded-full px-2 py-1 text-[0.6875rem] font-semibold text-faint transition-colors hover:text-brand-600"
+            href={href}
+            className="transition-colors hover:text-brand-600 dark:hover:text-brand-300"
           >
-            {prompt.categoryName}
-          </Link>
-        </div>
-
-        <h3 className={cn('font-bold leading-snug', compact ? 'text-[0.8125rem]' : 'text-sm')}>
-          <Link href={href} className="transition-colors hover:text-brand-600 dark:hover:text-brand-300">
             {prompt.title}
           </Link>
         </h3>
 
         {!compact && (
-          <p className="line-clamp-2 text-xs leading-relaxed text-body">{prompt.shortDescription}</p>
+          <p className="line-clamp-2 text-xs leading-relaxed text-body">
+            {prompt.shortDescription}
+          </p>
         )}
 
-        <div className="mt-auto flex items-center gap-3 pt-1 text-[0.6875rem] font-medium text-faint">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <ModelBadge model={prompt.aiModel} />
+          <Link
+            href={`/category/${prompt.categorySlug}`}
+            className="rounded-full bg-[var(--surface-sunken)] px-2 py-1 text-[0.6875rem] font-semibold text-body transition-colors hover:text-brand-600 dark:hover:text-brand-300"
+          >
+            {prompt.categoryName}
+          </Link>
+        </div>
+
+        <div className="mt-auto flex items-center gap-3 pt-2 text-[0.6875rem] font-medium text-faint">
           <span className="inline-flex items-center gap-1" title={`${prompt.viewCount} views`}>
             <EyeIcon size={13} />
             {formatCompact(prompt.viewCount)}
@@ -113,9 +128,9 @@ export function PromptCard({ prompt, locked, priority, compact, className }: Pro
             <CopyIcon size={13} />
             {formatCompact(prompt.copyCount)}
           </span>
-          {!compact && prompt.style && (
-            <span className="ml-auto truncate" title={`Style: ${prompt.style}`}>
-              {prompt.style}
+          {!compact && prompt.aspectRatio && (
+            <span className="ml-auto tabular-nums" title={`Aspect ratio ${prompt.aspectRatio}`}>
+              {prompt.aspectRatio}
             </span>
           )}
         </div>
@@ -159,6 +174,7 @@ export function PromptRow({
           ratio="square"
           sizes="88px"
           locked={locked}
+          category={prompt.categorySlug}
           className="w-[5.5rem] rounded-xl"
         />
       </Link>

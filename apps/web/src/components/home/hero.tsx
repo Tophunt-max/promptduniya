@@ -1,6 +1,5 @@
 import Link from 'next/link';
 
-import { AI_MODELS } from '@/lib/constants';
 import { formatCompact } from '@/lib/utils';
 import { SearchBar } from '../search/search-bar';
 import { ButtonLink } from '../ui/button';
@@ -9,9 +8,23 @@ import { ArrowRightIcon, SparkleIcon } from '../ui/icon';
 /**
  * Hero.
  *
- * The "collage" is built entirely from CSS gradients and SVG (see `.hero-mesh`
+ * The backdrop is built entirely from CSS gradients and SVG (see `.hero-mesh`
  * in globals.css) — it costs no image bytes, works in both themes, and avoids
  * using any third-party or copyrighted photography.
+ *
+ * Deliberately short. The previous version stacked seven blocks — pill,
+ * headline, sub-copy, search, two buttons, three stat cards and a row of model
+ * pills — which filled the whole first viewport on a laptop and pushed every
+ * actual prompt below the fold. On a catalogue site the product *is* the grid,
+ * so the hero's job is to get out of the way quickly:
+ *
+ *   - the stats are one inline row instead of three bordered cards
+ *   - the "prompts written for" model pills are gone; the home page already has
+ *     a dedicated "browse by AI model" section further down, so they were a
+ *     straight duplicate
+ *   - vertical padding is roughly a third lower at every breakpoint
+ *
+ * Net effect: the trending grid starts before the fold on a 900px viewport.
  */
 
 export interface HeroProps {
@@ -27,7 +40,7 @@ export function Hero({ promptCount, categoryCount, copyCount, popularSearches = 
       <div aria-hidden="true" className="hero-mesh" />
       <div aria-hidden="true" className="hero-grid opacity-60" />
 
-      <div className="container-page relative py-12 sm:py-16 lg:py-24">
+      <div className="container-page relative py-9 sm:py-11 lg:py-14">
         <div className="mx-auto max-w-3xl text-center">
           <Link
             href="/random-prompt"
@@ -38,18 +51,18 @@ export function Hero({ promptCount, categoryCount, copyCount, popularSearches = 
             <ArrowRightIcon size={13} />
           </Link>
 
-          <h1 className="mt-6 text-[2rem] font-extrabold leading-[1.08] sm:text-5xl lg:text-6xl">
-            Create stunning AI images
+          <h1 className="mt-5 text-[2.125rem] font-extrabold leading-[1.05] sm:text-5xl lg:text-[3.5rem]">
+            AI photo prompts that
             <br className="hidden sm:block" />{' '}
-            <span className="gradient-text">with better prompts</span>
+            <span className="gradient-text">actually work</span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-body sm:text-lg">
-            Discover trending AI image prompts, create your own prompts, and transform your ideas
-            into amazing visuals.
+          <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-body sm:text-lg">
+            Copy-paste prompts for Gemini, ChatGPT and Midjourney — including photo-editing prompts
+            that keep your own face and rebuild everything around it.
           </p>
 
-          <div className="mx-auto mt-8 max-w-2xl">
+          <div className="mx-auto mt-7 max-w-2xl">
             <SearchBar
               size="lg"
               popularSearches={popularSearches}
@@ -57,7 +70,7 @@ export function Hero({ promptCount, categoryCount, copyCount, popularSearches = 
             />
           </div>
 
-          <div className="mt-6 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
+          <div className="mt-5 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
             <ButtonLink href="/explore" size="lg" className="w-full sm:w-auto">
               Explore prompts
             </ButtonLink>
@@ -72,28 +85,15 @@ export function Hero({ promptCount, categoryCount, copyCount, popularSearches = 
             </ButtonLink>
           </div>
 
-          <dl className="mx-auto mt-10 grid max-w-lg grid-cols-3 gap-3">
-            <HeroStat label="Prompts" value={formatCompact(promptCount)} />
-            <HeroStat label="Categories" value={String(categoryCount)} />
-            <HeroStat label="Copies" value={formatCompact(copyCount)} />
+          {/* One inline row, divided rather than boxed — carries the same three
+              numbers in about a quarter of the vertical space. */}
+          <dl className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm sm:gap-x-8">
+            <HeroStat label="prompts" value={formatCompact(promptCount)} />
+            <Divider />
+            <HeroStat label="categories" value={String(categoryCount)} />
+            <Divider />
+            <HeroStat label="copies taken" value={formatCompact(copyCount)} />
           </dl>
-
-          <div className="mt-9">
-            <p className="mb-3 text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-faint">
-              Prompts written for
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {AI_MODELS.filter((model) => model.id !== 'other').map((model) => (
-                <Link
-                  key={model.id}
-                  href={`/explore?model=${model.id}`}
-                  className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)]/70 px-3 py-1.5 text-xs font-semibold text-body backdrop-blur transition-colors hover:border-brand-400 hover:text-brand-600"
-                >
-                  {model.label}
-                </Link>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </section>
@@ -102,11 +102,13 @@ export function Hero({ promptCount, categoryCount, copyCount, popularSearches = 
 
 function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)]/70 px-3 py-3 backdrop-blur">
-      <dd className="text-xl font-extrabold tabular-nums sm:text-2xl">{value}</dd>
-      <dt className="mt-0.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-faint">
-        {label}
-      </dt>
+    <div className="flex items-baseline gap-1.5">
+      <dd className="text-lg font-extrabold tabular-nums">{value}</dd>
+      <dt className="text-[0.8125rem] font-medium text-faint">{label}</dt>
     </div>
   );
+}
+
+function Divider() {
+  return <span aria-hidden="true" className="hidden size-1 rounded-full bg-[var(--border-strong)] sm:block" />;
 }

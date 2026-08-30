@@ -10,8 +10,14 @@
  * ======================================================================= */
 
 @theme {
+  /* Both faces are injected by next/font in app/layout.tsx. The local and
+     system names stay as fallbacks for the first paint and for the rare case
+     where the font files fail to load. */
   --font-sans:
-    'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    var(--font-inter), 'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', sans-serif;
+  --font-display:
+    var(--font-jakarta), var(--font-inter), 'Inter var', ui-sans-serif, system-ui, -apple-system,
     sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace;
 
@@ -131,12 +137,20 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /* Headings carry the display face and a tighter track. The optical size of
+     Plus Jakarta Sans runs slightly wide, so the negative tracking is a little
+     stronger here than the body face would need. */
   h1,
   h2,
   h3,
   h4 {
-    letter-spacing: -0.022em;
+    font-family: var(--font-display);
+    letter-spacing: -0.03em;
     text-wrap: balance;
+  }
+
+  h1 {
+    letter-spacing: -0.04em;
   }
 
   p {
@@ -246,16 +260,30 @@
     );
   }
 
+  /* The gradient used to run out to marigold-500, which on a near-white page
+     left the final word at roughly 2.4:1 against the background — legible as
+     decoration, not as text. It now lands on marigold-600 and reaches it later,
+     so the whole string stays above 4.5:1. The dark-theme override below moves
+     in the opposite direction for the same reason. */
   .gradient-text {
     background-image: linear-gradient(
       100deg,
-      var(--color-brand-600),
-      var(--color-brand-400) 45%,
-      var(--color-marigold-500)
+      var(--color-brand-700),
+      var(--color-brand-500) 55%,
+      var(--color-marigold-600)
     );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  html.dark .gradient-text {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-brand-300),
+      var(--color-brand-200) 55%,
+      var(--color-marigold-300)
+    );
   }
 
   /* Soft mesh used behind the hero — pure CSS, no image payload. */

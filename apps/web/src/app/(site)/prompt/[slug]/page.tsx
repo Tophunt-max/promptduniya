@@ -180,6 +180,8 @@ export default async function PromptDetailPage({ params }: { params: Params }) {
               priority
               sizes="(max-width: 1024px) 100vw, 44vw"
               locked={prompt.locked}
+              category={prompt.categorySlug}
+              style={prompt.style}
             />
           </div>
 
@@ -195,6 +197,7 @@ export default async function PromptDetailPage({ params }: { params: Params }) {
                     ratio="square"
                     sizes="120px"
                     locked={prompt.locked}
+                    category={prompt.categorySlug}
                   />
                 </div>
               ))}
