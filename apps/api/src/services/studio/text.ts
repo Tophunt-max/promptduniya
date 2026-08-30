@@ -154,6 +154,17 @@ export class WorkersAiTextEngine implements TextEngine {
 
 /* -------------------------------- Gemini ---------------------------------- */
 
+/**
+ * Extra output allowance for a model that reasons before answering.
+ *
+ * `maxOutputTokens` is a single budget covering the model's internal reasoning
+ * and the text it returns, and reasoning routinely runs to a few thousand tokens
+ * on a task that asks for a JSON object. Every call site here sizes its budget
+ * for the answer, so the engine adds the reasoning allowance rather than making
+ * each caller guess at it.
+ */
+const GEMINI_THINKING_HEADROOM = 6000;
+
 export class GeminiTextEngine implements TextEngine {
   readonly name: string;
 
@@ -183,8 +194,18 @@ export class GeminiTextEngine implements TextEngine {
           contents: [{ role: 'user', parts: [{ text: input.user }] }],
           generationConfig: {
             temperature: 0.9,
-            maxOutputTokens: input.maxTokens ?? 2000,
+            // Call sites budget for the *answer*. Current Gemini models reason
+            // first and bill that reasoning against the same ceiling, so passing
+            // the answer budget straight through starved the reply: at 1200 the
+            // trend expansion got truncated JSON that parsed to nothing, and the
+            // pipeline logged a healthy-looking run that produced zero themes.
+            // The headroom is deliberately generous — unused reasoning tokens
+            // cost nothing, whereas a truncated JSON reply costs the whole call.
+            maxOutputTokens: (input.maxTokens ?? 2000) + GEMINI_THINKING_HEADROOM,
             responseMimeType: 'application/json',
+            // Honoured by the models that support it, ignored by the ones that
+            // do not. Where it applies the headroom above simply goes unused.
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
         signal: AbortSignal.timeout(45_000),
@@ -207,10 +228,44 @@ export class GeminiTextEngine implements TextEngine {
     }
 
     const body = (await response.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      candidates?: {
+        content?: { parts?: { text?: string; thought?: boolean }[] };
+        finishReason?: string;
+      }[];
+      usageMetadata?: { thoughtsTokenCount?: number; candidatesTokenCount?: number };
     };
-    const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw AppError.badRequest('Gemini returned an empty reply');
+
+    const candidate = body.candidates?.[0];
+
+    // Every part, not just the first, and skipping the ones flagged as thoughts.
+    // Current Gemini models reason before answering and split the reply across
+    // parts; reading `parts[0].text` alone returned undefined whenever the first
+    // part was a thought, which read as "empty reply" from a working model.
+    const text = (candidate?.content?.parts ?? [])
+      .filter((part) => !part.thought && typeof part.text === 'string')
+      .map((part) => part.text as string)
+      .join('')
+      .trim();
+
+    if (!text) {
+      // `finishReason` is the difference between a token budget spent on
+      // reasoning and a safety block, and the generic message hid both. On these
+      // models `maxOutputTokens` is a shared budget covering thinking *and* the
+      // answer, so MAX_TOKENS here means the budget was too small rather than
+      // the output being too long.
+      const reason = candidate?.finishReason ?? 'unknown';
+      const thoughts = body.usageMetadata?.thoughtsTokenCount ?? 0;
+
+      if (reason === 'MAX_TOKENS') {
+        throw AppError.badRequest(
+          `Gemini spent its whole token budget (${input.maxTokens ?? 2000}) on reasoning and returned no answer` +
+            (thoughts ? ` — ${thoughts} thinking tokens` : '') +
+            `. Raise the budget or pick a model that does not think before replying.`,
+        );
+      }
+      throw AppError.badRequest(`Gemini returned an empty reply (finishReason: ${reason})`);
+    }
+
     return text;
   }
 }

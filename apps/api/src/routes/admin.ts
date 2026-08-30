@@ -566,7 +566,10 @@ admin.post('/prompts/:id/cover', async (c) => {
 /** Which providers are wired up, so the studio screen can explain itself. */
 admin.get('/studio/status', async (c) => {
   requireEditor(c);
-  return c.json({ ok: true, data: studioStatus() });
+  // `studioStatus()` is async — it reads the AI config. Without the await the
+  // Promise itself was serialised, which JSON renders as `{}`, and the studio
+  // screen then dereferenced `data.text.provider` on undefined and blanked.
+  return c.json({ ok: true, data: await studioStatus() });
 });
 
 /**

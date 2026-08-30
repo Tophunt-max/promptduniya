@@ -3,6 +3,7 @@ import { QUEUE_TERMINAL_STATUSES, type QueueSource, type QueueStatus } from '@pd
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { newId } from '../../lib/crypto';
+import { batchByParams } from '../../lib/d1';
 import { nowSec } from '../../lib/dates';
 import { AppError } from '../../lib/errors';
 import { logAutomation } from './logs';
@@ -98,9 +99,11 @@ export async function enqueue(input: EnqueueInput): Promise<EnqueuedItem[]> {
     updatedAt: now,
   }));
 
-  // Chunked to stay under D1's bound-parameter ceiling; a row here is wide.
-  for (let i = 0; i < rows.length; i += 15) {
-    await db.insert(contentQueue).values(rows.slice(i, i + 15));
+  // Batched to stay under D1's bound-parameter ceiling; a row here is wide (19
+  // columns), so a fixed 15 bound 285 parameters and any enqueue of more than
+  // five themes failed.
+  for (const chunk of batchByParams(rows)) {
+    await db.insert(contentQueue).values(chunk);
   }
 
   await logAutomation({

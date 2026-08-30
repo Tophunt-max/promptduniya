@@ -108,7 +108,9 @@ automation.get('/overview', async (c) => {
     ok: true,
     data: {
       config,
-      providers: studioStatus(),
+      // Must be awaited: serialising the bare Promise produced `providers: {}`,
+      // and the overview screen reads `providers.text.provider`.
+      providers: await studioStatus(),
       queue,
       trends,
       pending,

@@ -3,6 +3,7 @@ import type { TrendSource, TrendStatus } from '@pd/shared';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { newId } from '../../lib/crypto';
+import { batchByParams } from '../../lib/d1';
 import { dayBucket, lastNDayBuckets, nowSec } from '../../lib/dates';
 import { resolveTextEngine } from '../studio/text';
 import { logAutomation, logError } from './logs';
@@ -175,10 +176,12 @@ export async function recordSignals(drafts: SignalDraft[]): Promise<number> {
   if (rows.length === 0) return 0;
 
   let inserted = 0;
-  // Chunked because D1 caps bound parameters per statement and a scan can
-  // produce a few dozen signals at once.
-  for (let i = 0; i < rows.length; i += 20) {
-    const chunk = rows.slice(i, i + 20);
+  // Batched because D1 caps bound parameters per statement and a scan can
+  // produce a few dozen signals at once. The batch size is derived from the row
+  // width rather than fixed: at 9 columns a hardcoded 20 bound 180 parameters,
+  // over D1's ceiling of 100, so every full pass failed here and only the last
+  // short batch survived.
+  for (const chunk of batchByParams(rows)) {
     try {
       await db.insert(trendSignals).values(chunk).onConflictDoNothing();
       inserted += chunk.length;
@@ -438,9 +441,18 @@ export async function expandWithAi(
 
     const themes = parseThemes(reply);
 
+    // A reply that yields nothing usable is a failure, not a quiet success. It
+    // reads as "the model is configured and working, there was just nothing to
+    // say", which is almost never true — the usual cause is a model id that
+    // answers but does not honour the JSON contract. Logged at `warn` so it
+    // surfaces on the Logs tab instead of scrolling past as routine info.
     await logAutomation({
       scope: 'trend',
-      message: `Expanded ${seeds.length} signal(s) into ${themes.length} AI theme(s)`,
+      level: themes.length === 0 ? 'warn' : 'info',
+      message:
+        themes.length === 0
+          ? `Expanded ${seeds.length} signal(s) into no usable AI themes — the reply did not parse. Check the text model on the AI providers screen.`
+          : `Expanded ${seeds.length} signal(s) into ${themes.length} AI theme(s)`,
       provider: engineName,
       durationMs: Date.now() - started,
     });

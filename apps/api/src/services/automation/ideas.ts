@@ -242,9 +242,17 @@ export async function generateIdeas(options: IdeaOptions): Promise<GeneratedIdea
 
     parsed = parseIdeas(reply);
 
+    // Zero parsed ideas means the reply did not honour the JSON contract. The
+    // signal-label fallback below keeps the tick productive, but the operator
+    // still needs to know the model is not really working — at `info` this was
+    // indistinguishable from a healthy run.
     await logAutomation({
       scope: 'idea',
-      message: `Generated ${parsed.length} idea(s) from ${directions.length} direction(s)`,
+      level: parsed.length === 0 ? 'warn' : 'info',
+      message:
+        parsed.length === 0
+          ? `Generated no usable ideas from ${directions.length} direction(s) — the reply did not parse. Check the text model on the AI providers screen.`
+          : `Generated ${parsed.length} idea(s) from ${directions.length} direction(s)`,
       provider: engineName,
       durationMs: Date.now() - started,
     });

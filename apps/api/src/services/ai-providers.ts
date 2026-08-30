@@ -435,7 +435,12 @@ export async function testProvider(provider: TextProvider): Promise<ProviderTest
     const reply = await engine.complete({
       system: 'You are a test harness. Reply with JSON only.',
       user: 'Reply with exactly {"ok":true} and nothing else.',
-      maxTokens: 32,
+      // Deliberately generous for a nine-token answer. On current Gemini and
+      // OpenAI reasoning models the output cap is a shared budget covering the
+      // model's internal reasoning as well as the reply, so the old ceiling of
+      // 32 was consumed before a single character was emitted — and this screen
+      // then reported a working key and model as broken.
+      maxTokens: 2048,
     });
 
     return {

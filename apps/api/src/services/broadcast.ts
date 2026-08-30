@@ -2,6 +2,7 @@ import { db, notifications, subscriptions, users } from '@pd/db';
 import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import { newId } from '../lib/crypto';
+import { batchByParams } from '../lib/d1';
 import { nowSec } from '../lib/dates';
 import { AppError } from '../lib/errors';
 import { notify } from './notifications';
@@ -157,8 +158,11 @@ export async function sendBroadcast(input: BroadcastInput): Promise<BroadcastRes
       createdAt: now,
     }));
 
-    for (let i = 0; i < rows.length; i += 40) {
-      await db.insert(notifications).values(rows.slice(i, i + 40));
+    // Batched against D1's parameter ceiling. A fixed 40 rows bound 320
+    // parameters here, so a forced broadcast to more than twelve recipients
+    // threw — the case this function exists for.
+    for (const chunk of batchByParams(rows)) {
+      await db.insert(notifications).values(chunk);
     }
 
     return {

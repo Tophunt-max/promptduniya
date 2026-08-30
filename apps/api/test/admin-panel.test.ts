@@ -452,10 +452,25 @@ describe('bulk prompt operations', () => {
     await rejects(async () => {
       const { bulkSetPublished } = await import('../src/services/prompts-bulk');
       return await bulkSetPublished(
-        Array.from({ length: 201 }, (_, index) => `p_${index}`),
+        Array.from({ length: 76 }, (_, index) => `p_${index}`),
         true,
       );
-    }, /at most 200/i);
+    }, /at most 75/i);
+
+    // A batch at exactly the cap has to reach D1 and come back. This is the
+    // assertion the cap exists for: it was 200, which put the `inArray` over
+    // D1's 100-bound-parameter ceiling, so the real failure was a driver error
+    // and a 500 rather than the clean 400 above. Ids that match nothing are
+    // fine — the statement is still built and bound at full width.
+    const atCap = await withBindings(async () => {
+      const { bulkSetPublished } = await import('../src/services/prompts-bulk');
+      return bulkSetPublished(
+        Array.from({ length: 75 }, (_, index) => `p_absent_${index}`),
+        true,
+      );
+    });
+    expect(atCap.affected).toBe(0);
+    expect(atCap.missing).toHaveLength(75);
 
     // Deletion is capped harder — it is the one action here that cannot be undone.
     await rejects(async () => {

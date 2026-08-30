@@ -3,6 +3,7 @@ import { slugify } from '@pd/shared';
 import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
 import { newId } from '../lib/crypto';
+import { batchByParams } from '../lib/d1';
 import { nowSec } from '../lib/dates';
 import { AppError } from '../lib/errors';
 
@@ -31,8 +32,20 @@ import { AppError } from '../lib/errors';
  *    quietly wrong, which is the kind of bug nobody reports and everybody sees.
  */
 
-/** Above this, do it in two batches. Keeps the statement well inside D1's limits. */
-const MAX_BATCH = 200;
+/**
+ * Above this, do it in two batches. Keeps the statement inside D1's limits.
+ *
+ * D1 allows 100 bound parameters per query. The widest statement here is the
+ * tag removal, which binds one parameter per prompt id *and* one per tag (capped
+ * at 20 by the route), so the ceiling for ids is 80 — and 75 leaves headroom for
+ * the `SET` clauses the update paths add on top.
+ *
+ * This was 200, which is above the limit on its own: a bulk action over roughly
+ * a hundred prompts failed with a driver error and a 500, which is precisely the
+ * "clear 400 rather than a driver error" this cap was written to guarantee. The
+ * admin list pages 25 at a time, so 75 spans three full pages of selection.
+ */
+const MAX_BATCH = 75;
 
 export interface BulkResult {
   /** Rows the operation actually changed. */
@@ -301,8 +314,10 @@ export async function bulkAddTags(ids: string[], names: string[]): Promise<BulkR
   if (rows.length === 0) return { affected: 0, missing };
 
   const links = rows.flatMap((row) => tagIds.map((tagId) => ({ promptId: row.id, tagId })));
-  for (let i = 0; i < links.length; i += 50) {
-    await db.insert(promptTags).values(links.slice(i, i + 50)).onConflictDoNothing();
+  // Two columns, so a fixed 50 sat exactly on D1's 100-parameter ceiling with no
+  // headroom — adding a column here would have broken it silently.
+  for (const chunk of batchByParams(links)) {
+    await db.insert(promptTags).values(chunk).onConflictDoNothing();
   }
 
   await refreshTagCounts(tagIds);

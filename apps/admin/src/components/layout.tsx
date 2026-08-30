@@ -26,6 +26,7 @@ import {
   UsersIcon,
   type IconProps,
 } from './icons';
+import { ErrorBoundary } from './error-boundary';
 import { ThemeToggle } from './theme';
 import { cn } from './ui';
 
@@ -318,7 +319,12 @@ export function AdminLayout() {
         </header>
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-5 sm:px-5 sm:py-7">
-          <Outlet />
+          {/* Keyed by path so a screen that threw is retried on navigation and
+              the failure stays contained to that screen — the sidebar and the
+              rest of the console keep working. */}
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>
