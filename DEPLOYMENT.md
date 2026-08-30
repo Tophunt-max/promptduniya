@@ -249,6 +249,32 @@ Called over `fetch`, so no SDK is bundled.
 
 ## Deploying (all three Workers)
 
+Two ways. Both do the same work in the same order.
+
+### From GitHub (recommended)
+
+Add the credentials once, then deploy with a button. This is the only route that
+works with a token stored as a repository secret: GitHub never returns a secret's
+value over its API — not to a person and not to a CI system — so a workflow is the
+only place a stored token can be used.
+
+1. **Settings → Secrets and variables → Actions → New repository secret**
+   - `CLOUDFLARE_API_TOKEN` — 'Edit Cloudflare Workers' template, 40 characters
+   - `CLOUDFLARE_ACCOUNT_ID` — 32 hex characters
+2. **Actions → Deploy → Run workflow**
+
+It typechecks, lints, tests and builds first; a failure there blocks the deploy.
+You can pick a single app, and skip the migration, from the run dialog.
+
+Or from a terminal, without opening the browser:
+
+```bash
+gh workflow run deploy.yml -f apps=all
+gh run watch
+```
+
+### From your own machine
+
 ```bash
 export CLOUDFLARE_API_TOKEN=...     # 'Edit Cloudflare Workers' template, 40 chars
 export CLOUDFLARE_ACCOUNT_ID=...    # 32 hex characters
