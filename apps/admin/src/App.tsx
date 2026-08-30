@@ -13,6 +13,7 @@ import { MediaPage } from './pages/media';
 import { ModerationPage } from './pages/moderation';
 import { PlansPage } from './pages/plans';
 import { PromptEditPage } from './pages/prompt-edit';
+import { StudioPage } from './pages/studio';
 import { PromptsPage } from './pages/prompts';
 import { SettingsPage } from './pages/settings';
 import { UsersPage } from './pages/users';
@@ -58,6 +59,7 @@ export function App() {
             <Route path="prompts" element={<PromptsPage />} />
             <Route path="prompts/new" element={<PromptEditPage />} />
             <Route path="prompts/:id" element={<PromptEditPage />} />
+            <Route path="studio" element={<StudioPage />} />
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="articles" element={<ArticlesPage />} />
             <Route path="media" element={<MediaPage />} />

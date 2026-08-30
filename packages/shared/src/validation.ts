@@ -381,6 +381,30 @@ export const adminUserQuerySchema = paginationSchema.extend({
   status: z.enum(['active', 'suspended', 'deleted']).optional(),
 });
 
+/* ============================ Content studio ============================ */
+
+/** Shared fields between a studio preview and a full studio run. */
+const studioBase = {
+  theme: cleanText(200, 3),
+  categoryId: idSchema,
+  aiModel: aiModelEnum,
+  inputMode: inputModeEnum.optional().default('text-to-image'),
+  isPremium: z.boolean().optional().default(false),
+};
+
+export const studioDraftSchema = z.object(studioBase);
+
+export const studioRunSchema = z.object({
+  ...studioBase,
+  publishMode: z.enum(['draft', 'publish', 'schedule']).optional().default('draft'),
+  /** Unix seconds. Only read when publishMode is 'schedule'. */
+  scheduledFor: z.number().int().positive().optional().nullable(),
+  skipCover: z.boolean().optional().default(false),
+});
+
+export type StudioDraftInput = z.infer<typeof studioDraftSchema>;
+export type StudioRunInput = z.infer<typeof studioRunSchema>;
+
 export const adminUserUpdateSchema = z.object({
   status: z.enum(['active', 'suspended']).optional(),
   roles: z.array(z.enum(['admin', 'editor', 'creator', 'user'])).max(4).optional(),

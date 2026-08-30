@@ -191,6 +191,14 @@ export const CrownIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Used for the AI Studio, where generation is the whole point. */
+export const SparkleIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M11 3l2.1 5L18 10l-4.9 2L11 17l-2.1-5L4 10l4.9-2z" />
+    <path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" />
+  </Svg>
+);
+
 export const SearchIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="11" cy="11" r="6.5" />

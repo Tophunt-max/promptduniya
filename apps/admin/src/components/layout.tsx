@@ -17,6 +17,7 @@ import {
   PlansIcon,
   PromptsIcon,
   SettingsIcon,
+  SparkleIcon,
   UsersIcon,
   type IconProps,
 } from './icons';
@@ -51,6 +52,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Content',
     items: [
+      { to: '/studio', label: 'AI Studio', icon: SparkleIcon },
       { to: '/prompts', label: 'Prompts', icon: PromptsIcon },
       { to: '/categories', label: 'Categories', icon: CategoriesIcon },
       { to: '/articles', label: 'Articles', icon: ArticlesIcon },

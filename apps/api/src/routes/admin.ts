@@ -6,6 +6,8 @@ import {
   couponWriteSchema,
   planWriteSchema,
   promptWriteSchema,
+  studioDraftSchema,
+  studioRunSchema,
 } from '@pd/shared';
 import { clientIp, requireAdmin, requireEditor, withAccess, type Vars } from '../middleware';
 import { logAdminAction } from '../services/admin';
@@ -16,6 +18,8 @@ import {
   listHouseModels,
   promptsMissingCovers,
 } from '../services/images/covers';
+import { draftPrompt } from '../services/studio/blueprint';
+import { runStudioPipeline, studioStatus } from '../services/studio/pipeline';
 import {
   adminGetPrompt,
   adminListPrompts,
@@ -29,6 +33,7 @@ import {
   adminListCategories,
   createCategory,
   deleteCategory,
+  getCategoryById,
   updateCategory,
 } from '../services/categories';
 import {
@@ -544,6 +549,78 @@ admin.post('/prompts/:id/cover', async (c) => {
     // The engine is logged because a fallback can quietly swap providers, and a
     // cover drawn by a different model looks different.
     meta: { engine: result.engine, usedReference: result.usedReference, url: result.url },
+    ip: clientIp(c),
+  });
+
+  return c.json({ ok: true, data: result }, 201);
+});
+
+/* ----------------------------- Content studio ---------------------------- */
+
+/** Which providers are wired up, so the studio screen can explain itself. */
+admin.get('/studio/status', async (c) => {
+  requireEditor(c);
+  return c.json({ ok: true, data: studioStatus() });
+});
+
+/**
+ * Writes one prompt without saving it — a preview so an operator can judge the
+ * model's output before committing a batch to the catalogue.
+ */
+admin.post('/studio/draft', async (c) => {
+  requireEditor(c);
+  const body = studioDraftSchema.parse(await c.req.json());
+
+  const category = await getCategoryById(body.categoryId);
+  if (!category) throw AppError.badRequest('Unknown category');
+
+  const draft = await draftPrompt({
+    theme: body.theme,
+    categorySlug: category.slug,
+    categoryName: category.name,
+    aiModel: body.aiModel,
+    inputMode: body.inputMode,
+    isPremium: body.isPremium ?? false,
+  });
+
+  return c.json({ ok: true, data: draft });
+});
+
+/**
+ * The full pipeline: write, save, illustrate, publish.
+ *
+ * One prompt per request. Each step takes tens of seconds, so the client loops
+ * and shows progress rather than this endpoint accepting a count — a failure on
+ * the eighth item then costs one item instead of the whole run.
+ */
+admin.post('/studio/run', async (c) => {
+  const claims = requireEditor(c);
+  const body = studioRunSchema.parse(await c.req.json());
+
+  const result = await runStudioPipeline({
+    theme: body.theme,
+    categoryId: body.categoryId,
+    aiModel: body.aiModel,
+    inputMode: body.inputMode,
+    isPremium: body.isPremium ?? false,
+    publishMode: body.publishMode ?? 'draft',
+    scheduledFor: body.scheduledFor ?? null,
+    skipCover: body.skipCover ?? false,
+    authorId: claims.sub,
+  });
+
+  await logAdminAction({
+    actorId: claims.sub,
+    action: 'studio.generate',
+    targetType: 'prompt',
+    targetId: result.promptId,
+    meta: {
+      theme: body.theme,
+      textEngine: result.textEngine,
+      imageEngine: result.imageEngine,
+      published: result.published,
+      coverError: result.coverError,
+    },
     ip: clientIp(c),
   });
 

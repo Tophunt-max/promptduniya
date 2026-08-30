@@ -23,6 +23,9 @@ export interface ApiConfig {
   aiApiKey: string;
   /** Cover image generation: 'workers-ai' | 'gemini' | 'none'. */
   imageProvider: string;
+  /** Studio prompt writing: 'workers-ai' | 'gemini' | 'openai'. */
+  textProvider: string;
+  openaiApiKey: string;
   emailProvider: string;
   r2PublicUrl: string;
 }
@@ -66,6 +69,8 @@ export function config(): ApiConfig {
     aiProvider: str(env, 'AI_PROVIDER', 'template'),
     aiApiKey: str(env, 'AI_API_KEY'),
     imageProvider: str(env, 'IMAGE_PROVIDER', 'workers-ai'),
+    textProvider: str(env, 'TEXT_PROVIDER', 'workers-ai'),
+    openaiApiKey: str(env, 'OPENAI_API_KEY'),
     emailProvider: str(env, 'EMAIL_PROVIDER', 'console'),
     r2PublicUrl: str(env, 'R2_PUBLIC_URL'),
   };
