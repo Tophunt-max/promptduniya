@@ -1,0 +1,184 @@
+name: Deploy
+
+# Deploys the three Workers to Cloudflare.
+#
+# This runs inside GitHub Actions rather than from a developer machine for one
+# specific reason: `secrets.CLOUDFLARE_API_TOKEN` is only readable by a workflow.
+# GitHub never returns a secret's value over its API — not to a person, not to a
+# CI system, not to anything — so a workflow is the only place a stored token can
+# actually be used. Nothing else needs a copy of it.
+#
+# Setup, once:
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#     CLOUDFLARE_API_TOKEN    'Edit Cloudflare Workers' template, 40 characters
+#     CLOUDFLARE_ACCOUNT_ID   32 hex characters
+#
+# Then: Actions -> Deploy -> Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'Which apps to deploy'
+        type: choice
+        default: all
+        options: [all, api, web, admin]
+      skip_migrate:
+        description: 'Skip the remote D1 migration'
+        type: boolean
+        default: false
+      skip_verify:
+        description: 'Skip typecheck/lint/test (not recommended)'
+        type: boolean
+        default: false
+
+# One deploy at a time. Two overlapping runs could deploy the website against a
+# half-updated API, and `d1 migrations apply` is not safe to run concurrently.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_verify }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A broken build must not reach production, and these are cheap relative to
+      # a deploy. Tests run against local Miniflare bindings, so they need no
+      # Cloudflare credentials.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    needs: [verify]
+    # `always()` plus an explicit result check, so skipping verification is
+    # possible but a *failed* verification still blocks the deploy.
+    if: ${{ always() && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    environment: production
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Keeps wrangler non-interactive; `d1 migrations apply` otherwise waits for
+      # a confirmation nobody is there to give.
+      CI: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check the credentials are present and valid
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set as repository secrets."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret"
+            exit 1
+          fi
+
+          # Verified against Cloudflare up front. A token that is present but
+          # malformed otherwise fails several steps later, after a migration has
+          # already run.
+          code=$(curl -s -o /tmp/verify.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Cloudflare rejected the API token (HTTP $code). Check it has the 'Edit Cloudflare Workers' permissions."
+            # The response body names the problem and contains no secret.
+            cat /tmp/verify.json
+            exit 1
+          fi
+          echo "Token verified."
+
+      - run: npm ci
+
+      # Applied before the Worker is deployed, not after. Migration 0002 is
+      # additive — the running Worker simply does not select the new tables yet —
+      # so this order is safe, and the reverse is not: deploying first leaves every
+      # automation endpoint throwing "no such table" while the console looks fine.
+      - name: Apply D1 migrations
+        if: ${{ !inputs.skip_migrate && (inputs.apps == 'all' || inputs.apps == 'api') }}
+        working-directory: apps/api
+        run: npx wrangler d1 migrations apply promptduniya --remote
+
+      # The API goes first. apps/web holds a service binding to
+      # `promptduniya-api`, so the binding has to resolve to something that
+      # already understands the requests the new website will send. Deploying the
+      # website first is not a hard error — it is a site that half works.
+      - name: Deploy the API
+        if: ${{ inputs.apps == 'all' || inputs.apps == 'api' }}
+        working-directory: apps/api
+        run: npx wrangler deploy
+
+      - name: Build and deploy the website
+        if: ${{ inputs.apps == 'all' || inputs.apps == 'web' }}
+        working-directory: apps/web
+        # `next build` alone is not deployable; Cloudflare needs the OpenNext
+        # bundle, which is what `opennextjs-cloudflare build` produces.
+        run: |
+          npx opennextjs-cloudflare build
+          npx opennextjs-cloudflare deploy
+
+      - name: Build and deploy the admin console
+        if: ${{ inputs.apps == 'all' || inputs.apps == 'admin' }}
+        working-directory: apps/admin
+        # `npm run build` typechecks first, so a broken console cannot ship.
+        run: |
+          npm run build
+          npx wrangler deploy
+
+      - name: Check the API came up
+        if: ${{ inputs.apps == 'all' || inputs.apps == 'api' }}
+        run: |
+          # Public, unauthenticated, and touches the bindings — the cheapest proof
+          # that the Worker booted rather than merely uploaded.
+          url="https://promptduniya-api.onlineilovegames.workers.dev/health"
+          for attempt in 1 2 3; do
+            body=$(curl -s -m 15 "$url" || true)
+            if printf '%s' "$body" | grep -q '"healthy"'; then
+              echo "API health: ok"
+              exit 0
+            fi
+            echo "Attempt $attempt did not report healthy; retrying in 5s."
+            sleep 5
+          done
+          # A warning rather than a failure: the deploy itself succeeded, and a
+          # custom domain or a cold start can make this check wrong.
+          echo "::warning::Could not confirm API health. Check with: wrangler tail --name promptduniya-api"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy finished"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Apps | \`${{ inputs.apps }}\` |"
+            echo "| Migrations | ${{ inputs.skip_migrate && 'skipped' || 'applied' }} |"
+            echo "| Verification | ${{ inputs.skip_verify && 'skipped' || needs.verify.result }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo
+            echo "Next, in the admin console:"
+            echo "1. **AI providers** — paste a Gemini or OpenAI key, pick a model, press Test."
+            echo "2. **Automation** — press Discover, then Generate now, and review the queue."
+            echo "3. Turn automation on once you are happy with the output."
+          } >> "$GITHUB_STEP_SUMMARY"
