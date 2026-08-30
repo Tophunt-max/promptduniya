@@ -16,8 +16,8 @@ import {
   PremiumBadge,
   TrendingBadge,
 } from '@/components/ui/badge';
-import { CopyIcon, EyeIcon, HeartIcon } from '@/components/ui/icon';
-import { aiModel } from '@/lib/constants';
+import { CameraIcon, CopyIcon, EyeIcon, HeartIcon, SparkleIcon } from '@/components/ui/icon';
+import { aiModel, inputMode } from '@/lib/constants';
 import { formatDate, relativeTime } from '@/lib/dates';
 import { breadcrumbSchema, buildMetadata, creativeWorkSchema, faqSchema } from '@/lib/seo';
 import { formatCompact, truncate } from '@/lib/utils';
@@ -90,10 +90,12 @@ export default async function PromptDetailPage({ params }: { params: Params }) {
   ]);
 
   const model = aiModel(prompt.aiModel);
+  const mode = inputMode(prompt.inputMode);
   const path = `/prompt/${prompt.slug}`;
 
   const specs: { label: string; value: string | null }[] = [
     { label: 'AI model', value: model.label },
+    { label: 'Input', value: mode.label },
     { label: 'Category', value: prompt.categoryName },
     { label: 'Style', value: prompt.style },
     { label: 'Subject', value: prompt.gender },
@@ -263,6 +265,56 @@ export default async function PromptDetailPage({ params }: { params: Params }) {
               description={prompt.shortDescription}
             />
           </div>
+
+          {/* Deliberately ABOVE the prompt body, and outside the paywall.
+              PromptViewer renders its own "how to use" card from
+              `usageInstructions`, but that card is inside the locked gate — so a
+              visitor looking at a premium prompt saw a blurred box and no
+              explanation of what the prompt even does. Whether you need to
+              upload a photo is not the secret being sold; the prompt text is. */}
+          <section className="mt-7" aria-labelledby="howto-heading">
+            <div className="card p-5">
+              <div className="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-300"
+                >
+                  {mode.id === 'photo-edit' ? <CameraIcon size={17} /> : <SparkleIcon size={17} />}
+                </span>
+                <div className="min-w-0">
+                  <h2 id="howto-heading" className="text-base font-bold">
+                    {mode.label}
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-body">{mode.note}</p>
+                </div>
+              </div>
+
+              <ol className="mt-4 grid gap-2.5">
+                {mode.steps.map((step, index) => (
+                  <li key={step} className="flex gap-3 text-sm leading-relaxed">
+                    <span
+                      aria-hidden="true"
+                      className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--surface-sunken)] text-[0.625rem] font-bold tabular-nums text-body"
+                    >
+                      {index + 1}
+                    </span>
+                    <span className="text-body">{step}</span>
+                  </li>
+                ))}
+              </ol>
+
+              {prompt.aspectRatio && (
+                <p className="mt-4 border-t border-[var(--border-subtle)] pt-3 text-xs text-faint">
+                  Built for{' '}
+                  <span className="font-semibold text-[var(--text-primary)]">
+                    {prompt.aspectRatio}
+                  </span>{' '}
+                  and written for{' '}
+                  <span className="font-semibold text-[var(--text-primary)]">{model.label}</span>.
+                </p>
+              )}
+            </div>
+          </section>
 
           <section className="mt-7" aria-labelledby="prompt-heading">
             <h2 id="prompt-heading" className="mb-3 text-lg font-extrabold">

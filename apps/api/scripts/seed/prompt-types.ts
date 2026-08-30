@@ -12,6 +12,11 @@ export interface SeedPrompt {
   negativePrompt?: string;
   usageInstructions?: string;
   aiModel: string;
+  /**
+   * How the reader supplies the subject. Omitted means 'text-to-image', which
+   * is what every prompt written before the distinction existed was.
+   */
+  inputMode?: 'text-to-image' | 'photo-edit';
   categorySlug: string;
   style: string;
   gender: string;

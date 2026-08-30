@@ -46,6 +46,7 @@ export const GEMINI_EDIT_PROMPTS: SeedPrompt[] = [
     shortDescription:
       'Upload your photo and get a warm Diwali portrait lit almost entirely by clay diyas in a home doorway.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'festival',
     style: 'Cinematic',
     gender: 'any',
@@ -87,6 +88,7 @@ Constraints: vertical 4:5 framing. Face fully turned to camera. Exactly one flam
     shortDescription:
       'Turn your photo into a mid-spin Navratri garba portrait with a flaring lehenga and warm festival lights behind.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'festival',
     style: 'Cinematic',
     gender: 'female',
@@ -129,6 +131,7 @@ Constraints: vertical 4:5 framing. Face fully turned to camera and completely sh
     shortDescription:
       'Upload your photo for a still, editorial saree portrait in a stone temple corridor with long receding pillars.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'saree',
     style: 'Editorial Fashion',
     gender: 'female',
@@ -171,6 +174,7 @@ Constraints: vertical 4:5 framing. Face fully to camera. Saree pleats must fall 
     shortDescription:
       'A warm two-person mehendi portrait built from two uploaded photos, with both faces held sharp and recognisable.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'couples',
     style: 'Cinematic',
     gender: 'couple',
@@ -214,6 +218,7 @@ Constraints: vertical 4:5 framing. Exactly two people. Both faces fully to camer
     shortDescription:
       'A cold, expensive-looking night portrait in a glass-walled car showroom, built around your uploaded photo.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'luxury',
     style: 'Editorial Fashion',
     gender: 'male',
@@ -257,6 +262,7 @@ Constraints: vertical 3:4 framing. Face fully to camera. Coat must read as wool 
     shortDescription:
       'A clean overcast-light portrait against carved sandstone that keeps kurta fabric and stone texture honest.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'traditional',
     style: 'Editorial Fashion',
     gender: 'male',
@@ -298,6 +304,7 @@ Constraints: vertical 4:5 framing. Face fully to camera. Jaali shadow pattern mu
     shortDescription:
       'A neutral studio headshot from a phone selfie — clean grey backdrop, soft key light, nothing stylised.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'business',
     style: 'Studio Portrait',
     gender: 'any',
@@ -340,6 +347,7 @@ Constraints: vertical 4:5 framing. Face fully to camera at eye level. Both eyes 
     shortDescription:
       'A cold-weather travel portrait in falling snow, with breath visible and deodar trees fading into white behind.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'travel',
     style: 'Cinematic',
     gender: 'any',
@@ -383,6 +391,7 @@ Constraints: vertical 3:4 framing. Face fully to camera and sharp. Visible breat
     shortDescription:
       'Rebuild a plain mirror selfie as a considered full-length one, keeping the phone in frame and your face intact.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'instagram',
     style: 'Minimal',
     gender: 'female',
@@ -425,6 +434,7 @@ Constraints: vertical 4:5 framing. Phone visible in hand and reflected. Whatever
     shortDescription:
       'A dusk portrait beside a parked classic motorcycle on an empty highway shoulder, with the tank left unbadged.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'bikes',
     style: 'Cinematic',
     gender: 'male',
@@ -467,6 +477,7 @@ Constraints: vertical 3:4 framing. Face fully to camera and sharp. Fuel tank and
     shortDescription:
       'A warm, honest anniversary portrait of two parents at home — built to respect real age rather than erase it.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'family',
     style: 'Documentary',
     gender: 'couple',
@@ -509,6 +520,7 @@ Constraints: vertical 4:5 framing. Exactly two people. Both faces fully to camer
     shortDescription:
       'An editorial streetwear portrait on a wet city street, using reflected neon as fill without going full cyberpunk.',
     aiModel: 'gemini',
+    inputMode: 'photo-edit',
     categorySlug: 'fashion',
     style: 'Street Photography',
     gender: 'female',

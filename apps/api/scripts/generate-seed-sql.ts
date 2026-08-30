@@ -367,14 +367,15 @@ function main() {
     emit(
       `INSERT INTO prompts (
     id, title, slug, short_description, prompt_text, negative_prompt, usage_instructions,
-    ai_model, category_id, style, gender, age_group, location, aspect_ratio, camera_style,
-    lighting, mood, difficulty, is_premium, is_featured, is_trending, is_editors_pick,
-    is_published, published_at, author_id, seo_title, seo_description, search_text,
-    created_at, updated_at
+    ai_model, input_mode, category_id, style, gender, age_group, location, aspect_ratio,
+    camera_style, lighting, mood, difficulty, is_premium, is_featured, is_trending,
+    is_editors_pick, is_published, published_at, author_id, seo_title, seo_description,
+    search_text, created_at, updated_at
   ) VALUES (
     ${str(id)}, ${str(prompt.title)}, ${str(prompt.slug)}, ${str(prompt.shortDescription)},
     ${str(prompt.promptText)}, ${str(prompt.negativePrompt)}, ${str(prompt.usageInstructions)},
-    ${str(prompt.aiModel)}, ${str(categoryId)}, ${str(prompt.style)}, ${str(prompt.gender)},
+    ${str(prompt.aiModel)}, ${str(prompt.inputMode ?? 'text-to-image')},
+    ${str(categoryId)}, ${str(prompt.style)}, ${str(prompt.gender)},
     ${str(prompt.ageGroup)}, ${str(prompt.location)}, ${str(prompt.aspectRatio)},
     ${str(prompt.cameraStyle)}, ${str(prompt.lighting)}, ${str(prompt.mood)},
     ${str(prompt.difficulty)}, ${bool(prompt.isPremium)}, ${bool(prompt.isFeatured)},
@@ -388,6 +389,7 @@ function main() {
     negative_prompt = excluded.negative_prompt,
     usage_instructions = excluded.usage_instructions,
     ai_model = excluded.ai_model,
+    input_mode = excluded.input_mode,
     category_id = excluded.category_id,
     style = excluded.style,
     gender = excluded.gender,

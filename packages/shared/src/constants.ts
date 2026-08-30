@@ -173,6 +173,49 @@ export const DIFFICULTIES = [
   { id: 'advanced', label: 'Advanced' },
 ] as const;
 
+/**
+ * How the reader supplies the subject of the image.
+ *
+ * This is the single most useful thing to tell someone before they read a
+ * prompt, because it decides whether they need to do anything first. A
+ * photo-edit prompt without an uploaded face produces a stranger; a
+ * text-to-image prompt ignores an upload entirely.
+ */
+export const INPUT_MODES = [
+  {
+    id: 'text-to-image',
+    label: 'Text to image',
+    short: 'Text to image',
+    /** Shown on the prompt page as the one-line explanation. */
+    note: 'The model builds the whole picture from the prompt. Nothing to upload.',
+    /** Ordered steps rendered in the "how to use" block. */
+    steps: [
+      'Open your AI image tool.',
+      'Paste the prompt exactly as written.',
+      'Generate, then adjust the wardrobe or location line to taste.',
+    ],
+  },
+  {
+    id: 'photo-edit',
+    label: 'Upload your photo',
+    short: 'Photo edit',
+    note: 'Upload a photo of yourself. The prompt keeps your face and rebuilds everything around it.',
+    steps: [
+      'Upload a clear, front-facing photo of yourself.',
+      'Paste the prompt in the same message as the photo.',
+      'Generate two or three times — the face locks in more cleanly on later runs.',
+    ],
+  },
+] as const;
+
+export type InputModeId = (typeof INPUT_MODES)[number]['id'];
+
+export const INPUT_MODE_IDS = INPUT_MODES.map((m) => m.id) as InputModeId[];
+
+export function inputMode(id: string | null | undefined) {
+  return INPUT_MODES.find((m) => m.id === id) ?? INPUT_MODES[0];
+}
+
 export const QUALITY_LEVELS = [
   { id: 'standard', label: 'Standard detail' },
   { id: 'high', label: 'High detail' },

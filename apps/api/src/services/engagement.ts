@@ -46,6 +46,7 @@ export async function copyPrompt(input: {
       isPublished: prompts.isPublished,
       title: prompts.title,
       aiModel: prompts.aiModel,
+      inputMode: prompts.inputMode,
       copyCount: prompts.copyCount,
     })
     .from(prompts)
@@ -245,6 +246,7 @@ export async function listFavorites(
       slug: prompts.slug,
       shortDescription: prompts.shortDescription,
       aiModel: prompts.aiModel,
+      inputMode: prompts.inputMode,
       categoryName: categories.name,
       categorySlug: categories.slug,
       coverImageUrl: prompts.coverImageUrl,
@@ -300,6 +302,7 @@ export async function listLikedPrompts(userId: string, limit = 60) {
       slug: prompts.slug,
       shortDescription: prompts.shortDescription,
       aiModel: prompts.aiModel,
+      inputMode: prompts.inputMode,
       categoryName: categories.name,
       categorySlug: categories.slug,
       coverImageUrl: prompts.coverImageUrl,

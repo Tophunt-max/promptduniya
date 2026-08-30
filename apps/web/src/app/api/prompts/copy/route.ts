@@ -34,6 +34,7 @@ export const POST = handle(async (request: Request) => {
       formatted = withInstructions({
         title: prompt.title,
         aiModel: prompt.aiModel,
+        inputMode: prompt.inputMode,
         promptText: result.promptText,
         negativePrompt: result.negativePrompt,
         usageInstructions: result.usageInstructions,

@@ -197,6 +197,21 @@ export const prompts = sqliteTable(
     usageInstructions: text('usage_instructions'),
 
     aiModel: text('ai_model').notNull(), // gemini | chatgpt | midjourney | flux | ...
+
+    /**
+     * How the viewer supplies the subject.
+     *
+     *   text-to-image — the model invents the whole picture from the prompt
+     *   photo-edit    — the viewer uploads their own photo and the prompt
+     *                   rebuilds the scene around their real face
+     *
+     * These are genuinely different products from the reader's point of view:
+     * a photo-edit prompt is useless without an upload, and a text-to-image
+     * prompt ignores one. Defaults to text-to-image so existing rows keep
+     * their present meaning.
+     */
+    inputMode: text('input_mode').notNull().default('text-to-image'),
+
     categoryId: text('category_id')
       .notNull()
       .references(() => categories.id, { onDelete: 'restrict' }),
@@ -244,6 +259,7 @@ export const prompts = sqliteTable(
     uniqueIndex('prompts_slug_uq').on(t.slug),
     index('prompts_category_idx').on(t.categoryId),
     index('prompts_model_idx').on(t.aiModel),
+    index('prompts_input_mode_idx').on(t.inputMode, t.isPublished),
     index('prompts_published_idx').on(t.isPublished, t.publishedAt),
     index('prompts_premium_idx').on(t.isPremium),
     index('prompts_trending_idx').on(t.isTrending, t.trendingScore),

@@ -38,6 +38,7 @@ export interface LikedPromptRow {
   slug: string;
   shortDescription: string;
   aiModel: string;
+  inputMode: string;
   categoryName: string;
   categorySlug: string;
   coverImageUrl: string | null;
@@ -88,6 +89,7 @@ export interface FavoriteRow {
   slug: string;
   shortDescription: string;
   aiModel: string;
+  inputMode: string;
   categoryName: string;
   categorySlug: string;
   coverImageUrl: string | null;
@@ -164,6 +166,7 @@ export async function copyPrompt(input: {
 export function withInstructions(input: {
   title: string;
   aiModel: string;
+  inputMode: string;
   promptText: string;
   negativePrompt: string | null;
   usageInstructions: string | null;
@@ -177,13 +180,20 @@ export function withInstructions(input: {
     lines.push('', '## How to use', input.usageInstructions);
   }
 
-  lines.push(
-    '',
-    '## Notes',
-    `- Written and tested for: ${input.aiModel}`,
-    '- Adjust subject, outfit and location to match your reference image.',
-    '- Re-run two or three times and pick the strongest composition.',
-  );
+  lines.push('', '## Notes', `- Written and tested for: ${input.aiModel}`);
+
+  // A photo-edit prompt is useless without the upload, so the exported document
+  // has to say so — someone reading this file a week later has no page around it.
+  if (input.inputMode === 'photo-edit') {
+    lines.push(
+      '- Upload a clear, front-facing photo of yourself in the same message as this prompt.',
+      '- The prompt preserves your face; do not remove the identity-lock paragraph at the top.',
+    );
+  } else {
+    lines.push('- Adjust subject, outfit and location to match your reference image.');
+  }
+
+  lines.push('- Re-run two or three times and pick the strongest composition.');
 
   return lines.join('\n');
 }

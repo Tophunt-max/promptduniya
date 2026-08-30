@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { AI_MODELS, ASPECT_RATIOS, DIFFICULTIES, GENDERS, STYLES } from '@pd/shared';
+import {
+  AI_MODELS,
+  ASPECT_RATIOS,
+  DIFFICULTIES,
+  GENDERS,
+  INPUT_MODES,
+  STYLES,
+} from '@pd/shared';
 import {
   Alert,
   Button,
@@ -31,6 +38,7 @@ interface AdminPromptDetail {
   negativePrompt: string | null;
   usageInstructions: string | null;
   aiModel: string;
+  inputMode: string;
   categoryId: string;
   style: string | null;
   gender: string | null;
@@ -61,6 +69,7 @@ interface FormState {
   negativePrompt: string;
   usageInstructions: string;
   aiModel: string;
+  inputMode: string;
   categoryId: string;
   style: string;
   gender: string;
@@ -91,6 +100,7 @@ const BLANK: FormState = {
   negativePrompt: '',
   usageInstructions: '',
   aiModel: 'gemini',
+  inputMode: 'text-to-image',
   categoryId: '',
   style: '',
   gender: 'any',
@@ -128,6 +138,7 @@ function toPayload(form: FormState) {
     negativePrompt: form.negativePrompt || undefined,
     usageInstructions: form.usageInstructions || undefined,
     aiModel: form.aiModel,
+    inputMode: form.inputMode,
     categoryId: form.categoryId,
     style: form.style || undefined,
     gender: form.gender || undefined,
@@ -175,6 +186,7 @@ export function PromptEditPage() {
       negativePrompt: prompt.negativePrompt ?? '',
       usageInstructions: prompt.usageInstructions ?? '',
       aiModel: prompt.aiModel,
+      inputMode: prompt.inputMode ?? 'text-to-image',
       categoryId: prompt.categoryId,
       style: prompt.style ?? '',
       gender: prompt.gender ?? 'any',
@@ -309,6 +321,20 @@ export function PromptEditPage() {
                   {AI_MODELS.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field
+                label="Input mode"
+                hint="Photo edit means the reader uploads their own face."
+                error={fieldErrors.inputMode}
+              >
+                <Select value={form.inputMode} onChange={(e) => set('inputMode', e.target.value)}>
+                  {INPUT_MODES.map((mode) => (
+                    <option key={mode.id} value={mode.id}>
+                      {mode.label}
                     </option>
                   ))}
                 </Select>

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { aiModel } from '@/lib/constants';
 import { cn } from '@/lib/utils';
-import { CrownIcon, FlameIcon, SparkleIcon } from './icon';
+import { CameraIcon, CrownIcon, FlameIcon, SparkleIcon } from './icon';
 
 export type BadgeTone =
   | 'neutral'
@@ -108,6 +108,28 @@ export function ModelBadge({ model, className }: { model: string; className?: st
     <Badge tone={MODEL_TONES[model] ?? 'neutral'} className={className}>
       {meta.short}
     </Badge>
+  );
+}
+
+/**
+ * Input-mode chip.
+ *
+ * Only rendered for photo-edit prompts. Text-to-image is the default and the
+ * overwhelming majority, so badging it too would add noise to every card
+ * without telling the reader anything — the useful signal is the exception.
+ */
+export function InputModeBadge({ mode, className }: { mode: string; className?: string }) {
+  if (mode !== 'photo-edit') return null;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full bg-ink-900/85 px-2.5 py-1 text-[0.6875rem] font-bold text-white backdrop-blur dark:bg-white/90 dark:text-ink-950',
+        className,
+      )}
+    >
+      <CameraIcon size={12} />
+      Your photo
+    </span>
   );
 }
 

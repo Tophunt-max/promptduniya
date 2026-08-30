@@ -17,6 +17,8 @@ export interface PromptCardData {
   slug: string;
   shortDescription: string;
   aiModel: string;
+  /** 'text-to-image' | 'photo-edit' — see INPUT_MODES in @pd/shared. */
+  inputMode: string;
   categoryName: string;
   categorySlug: string;
   style: string | null;
@@ -222,6 +224,7 @@ export interface AdminPromptDetail {
   negativePrompt: string | null;
   usageInstructions: string | null;
   aiModel: string;
+  inputMode: string;
   categoryId: string;
   subcategoryId: string | null;
   style: string | null;

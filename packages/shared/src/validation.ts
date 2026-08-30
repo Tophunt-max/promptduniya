@@ -6,6 +6,7 @@ import {
   ASPECT_RATIOS,
   DIFFICULTIES,
   GENDERS,
+  INPUT_MODE_IDS,
   PAGE_SIZE,
   QUALITY_LEVELS,
   SORT_OPTIONS,
@@ -106,6 +107,7 @@ const accessEnum = z.enum(ACCESS_FILTERS.map((a) => a.id) as [string, ...string[
 const aspectEnum = z.enum(ASPECT_RATIOS.map((a) => a.id) as [string, ...string[]]);
 const genderEnum = z.enum(GENDERS.map((g) => g.id) as [string, ...string[]]);
 const difficultyEnum = z.enum(DIFFICULTIES.map((d) => d.id) as [string, ...string[]]);
+const inputModeEnum = z.enum(INPUT_MODE_IDS as [string, ...string[]]);
 
 export const promptListQuerySchema = z.object({
   q: cleanText(120).optional(),
@@ -133,6 +135,7 @@ export const promptWriteSchema = z.object({
   negativePrompt: cleanText(2000).optional(),
   usageInstructions: cleanText(2000).optional(),
   aiModel: aiModelEnum,
+  inputMode: inputModeEnum.optional().default('text-to-image'),
   categoryId: idSchema,
   subcategoryId: idSchema.optional().or(z.literal('')),
   style: cleanText(60).optional(),

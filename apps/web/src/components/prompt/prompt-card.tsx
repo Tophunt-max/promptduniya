@@ -3,7 +3,13 @@ import Link from 'next/link';
 import { aiModel } from '@/lib/constants';
 import { cn, formatCompact } from '@/lib/utils';
 import type { PromptCardData } from '@/services/prompts';
-import { EditorsPickBadge, ModelBadge, PremiumBadge, TrendingBadge } from '../ui/badge';
+import {
+  EditorsPickBadge,
+  InputModeBadge,
+  ModelBadge,
+  PremiumBadge,
+  TrendingBadge,
+} from '../ui/badge';
 import { CopyIcon, EyeIcon } from '../ui/icon';
 import { CopyPromptButton, FavoriteButton, LikeButton } from './prompt-actions';
 import { PromptArtwork } from './prompt-artwork';
@@ -57,6 +63,15 @@ export function PromptCard({ prompt, locked, priority, compact, className }: Pro
           {prompt.isPremium && <PremiumBadge compact={compact} />}
           {prompt.isEditorsPick && !compact && !prompt.isTrending && <EditorsPickBadge />}
         </div>
+
+        {/* Bottom-left: "bring your own face". Placed away from the status
+            badges because it answers a different question — not how good the
+            prompt is, but whether the reader has to do something first. */}
+        {prompt.inputMode === 'photo-edit' && (
+          <div className="pointer-events-none absolute bottom-2.5 left-2.5">
+            <InputModeBadge mode={prompt.inputMode} />
+          </div>
+        )}
 
         {/* Top-right quick actions */}
         <div className="absolute right-2 top-2 flex flex-col gap-1 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 md:opacity-0 max-md:opacity-100">

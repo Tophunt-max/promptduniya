@@ -173,6 +173,46 @@ export const DIFFICULTIES = [
   { id: 'advanced', label: 'Advanced' },
 ] as const;
 
+/**
+ * How the reader supplies the subject of the image. Kept in step with
+ * INPUT_MODES in packages/shared/src/constants.ts — this file is deliberately a
+ * copy rather than a re-export so the client bundle does not pull in the shared
+ * runtime (same reason AI_MODELS is duplicated here).
+ *
+ * This is the first thing a reader needs to know about a prompt, because it
+ * decides whether they have to do anything before pasting it.
+ */
+export const INPUT_MODES = [
+  {
+    id: 'text-to-image',
+    label: 'Text to image',
+    short: 'Text to image',
+    note: 'The model builds the whole picture from the prompt. Nothing to upload.',
+    steps: [
+      'Open your AI image tool.',
+      'Paste the prompt exactly as written.',
+      'Generate, then adjust the wardrobe or location line to taste.',
+    ],
+  },
+  {
+    id: 'photo-edit',
+    label: 'Upload your photo',
+    short: 'Photo edit',
+    note: 'Upload a photo of yourself. The prompt keeps your face and rebuilds everything around it.',
+    steps: [
+      'Upload a clear, front-facing photo of yourself.',
+      'Paste the prompt in the same message as the photo.',
+      'Generate two or three times — the face locks in more cleanly on later runs.',
+    ],
+  },
+] as const;
+
+export type InputModeId = (typeof INPUT_MODES)[number]['id'];
+
+export function inputMode(id: string | null | undefined) {
+  return INPUT_MODES.find((m) => m.id === id) ?? INPUT_MODES[0];
+}
+
 export const QUALITY_LEVELS = [
   { id: 'standard', label: 'Standard detail' },
   { id: 'high', label: 'High detail' },

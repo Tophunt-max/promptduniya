@@ -29,6 +29,8 @@ export interface PromptCard {
   slug: string;
   shortDescription: string;
   aiModel: string;
+  /** 'text-to-image' | 'photo-edit' — see INPUT_MODES in @pd/shared. */
+  inputMode: string;
   categoryName: string;
   categorySlug: string;
   style: string | null;
@@ -57,6 +59,7 @@ const cardColumns = {
   slug: prompts.slug,
   shortDescription: prompts.shortDescription,
   aiModel: prompts.aiModel,
+  inputMode: prompts.inputMode,
   categoryName: categories.name,
   categorySlug: categories.slug,
   style: prompts.style,
@@ -464,6 +467,55 @@ async function syncPromptTags(promptId: string, tagNames: string[]): Promise<voi
   }
 }
 
+/**
+ * Replaces a prompt's example-output images.
+ *
+ * `exampleImages` was previously accepted by `promptWriteSchema`, validated,
+ * and then silently dropped — `writeColumns` never referenced it and nothing
+ * else in the codebase wrote to `prompt_images`. The public prompt page has
+ * always *read* that table to draw its thumbnail strip, so the feature was
+ * half-built: a read path with no write path. This is the missing half.
+ *
+ * Replace-all rather than diff, matching `syncPromptTags`. The row count is
+ * capped at eight by the schema, so the cost of rewriting them is trivial and
+ * it keeps ordering honest: `sortOrder` follows the submitted array.
+ *
+ * `objectKey` is NOT NULL in the table but the write schema only carries a URL,
+ * because an operator may legitimately paste a URL for a file uploaded earlier.
+ * The key is therefore recovered from the URL path, which is exactly what
+ * `uploadImage` used to build it. It exists so that a future cleanup job can
+ * delete orphaned objects from R2 — nothing depends on it today.
+ */
+async function syncPromptImages(
+  promptId: string,
+  images: PromptWriteInput['exampleImages'],
+): Promise<void> {
+  await db.delete(promptImages).where(eq(promptImages.promptId, promptId));
+  if (!images?.length) return;
+
+  await db.insert(promptImages).values(
+    images.map((image, index) => ({
+      id: newId(),
+      promptId,
+      objectKey: objectKeyFromUrl(image.url),
+      url: image.url,
+      alt: image.alt ?? null,
+      width: image.width ?? null,
+      height: image.height ?? null,
+      sortOrder: index,
+    })),
+  );
+}
+
+/** Best-effort recovery of an R2 object key from its public URL. */
+function objectKeyFromUrl(url: string): string {
+  try {
+    return new URL(url).pathname.replace(/^\/+/, '') || url;
+  } catch {
+    return url;
+  }
+}
+
 function writeColumns(input: PromptWriteInput) {
   return {
     title: input.title,
@@ -472,6 +524,7 @@ function writeColumns(input: PromptWriteInput) {
     negativePrompt: input.negativePrompt ?? null,
     usageInstructions: input.usageInstructions ?? null,
     aiModel: input.aiModel,
+    inputMode: input.inputMode ?? 'text-to-image',
     categoryId: input.categoryId,
     subcategoryId: input.subcategoryId || null,
     style: input.style ?? null,
@@ -528,6 +581,7 @@ export async function createPrompt(input: PromptWriteInput, authorId: string | n
   });
 
   await syncPromptTags(id, tagNames);
+  await syncPromptImages(id, input.exampleImages);
   await refreshCategoryCount(input.categoryId);
   return adminGetPrompt(id);
 }
@@ -563,6 +617,7 @@ export async function updatePrompt(id: string, input: PromptWriteInput) {
     .where(eq(prompts.id, id));
 
   await syncPromptTags(id, tagNames);
+  await syncPromptImages(id, input.exampleImages);
   if (existing.categoryId !== input.categoryId) {
     await Promise.all([
       refreshCategoryCount(existing.categoryId),
