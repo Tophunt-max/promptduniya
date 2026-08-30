@@ -345,8 +345,33 @@ export interface AdminListQuery {
   pageSize?: number;
 }
 
+/**
+ * Columns for the admin listing.
+ *
+ * `cardColumns` omits `isPublished` because the public listing only ever returns
+ * published rows, making the flag redundant there. The admin table, however,
+ * renders a Published/Draft badge and a Publish/Unpublish button from it — so
+ * selecting `cardColumns` here meant the field arrived undefined and every
+ * prompt in the console displayed as a draft, including the forty-two that were
+ * live on the site.
+ */
+const adminCardColumns = {
+  ...cardColumns,
+  isPublished: prompts.isPublished,
+  scheduledFor: prompts.scheduledFor,
+  updatedAt: prompts.updatedAt,
+};
+
+export interface AdminListResult extends Omit<ListResult, 'items'> {
+  items: (PromptCard & {
+    isPublished: boolean;
+    scheduledFor: number | null;
+    updatedAt: number;
+  })[];
+}
+
 /** Admin listing exposes drafts and unpublished rows alongside published ones. */
-export async function adminListPrompts(query: AdminListQuery): Promise<ListResult> {
+export async function adminListPrompts(query: AdminListQuery): Promise<AdminListResult> {
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? PAGE_SIZE;
   const filters: SQL[] = [];
@@ -362,7 +387,7 @@ export async function adminListPrompts(query: AdminListQuery): Promise<ListResul
 
   const [rows, totals] = await Promise.all([
     db
-      .select(cardColumns)
+      .select(adminCardColumns)
       .from(prompts)
       .innerJoin(categories, eq(categories.id, prompts.categoryId))
       .where(where)
