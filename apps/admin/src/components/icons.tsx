@@ -255,3 +255,35 @@ export const RadarIcon = (p: IconProps) => (
     <path d="M12 12l6-4.5" />
   </Svg>
 );
+
+
+/** Analytics — a bar chart, distinct from TrendUpIcon's single rising line. */
+export const AnalyticsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+  </Svg>
+);
+
+/** Tags. */
+export const TagsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12.6 3.3H19a1.7 1.7 0 0 1 1.7 1.7v6.4a2 2 0 0 1-.6 1.4l-6.6 6.6a1.7 1.7 0 0 1-2.4 0l-6.4-6.4a1.7 1.7 0 0 1 0-2.4l6.6-6.6a2 2 0 0 1 1.3-.7z" />
+    <circle cx="16.5" cy="7.5" r="1.2" />
+  </Svg>
+);
+
+/** Audit log — a scroll of recorded lines. */
+export const LogsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 3.5h9.5L20 8v12.5H6z" />
+    <path d="M15 3.5V8h5M9.5 12.5h7M9.5 16h7" />
+  </Svg>
+);
+
+/** Notifications. */
+export const BellIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5z" />
+    <path d="M10 18.5a2 2 0 0 0 4 0" />
+  </Svg>
+);

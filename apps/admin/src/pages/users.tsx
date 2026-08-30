@@ -47,6 +47,28 @@ interface UserListResponse {
   pageSize: number;
 }
 
+/** Shape of `GET /v1/admin/users/:id`. The password hash never leaves the API. */
+interface UserDetail {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    username: string | null;
+    status: string;
+    emailVerifiedAt: number | null;
+    bio: string | null;
+    avatarUrl: string | null;
+    premiumCachedUntil: number | null;
+    oauthProvider: string | null;
+    lastLoginAt: number | null;
+    failedLoginCount: number;
+    lockedUntil: number | null;
+    createdAt: number;
+  };
+  roles: string[];
+  stats: { likes: number; saves: number; copies: number };
+}
+
 const ROLES = ['user', 'editor', 'admin'] as const;
 
 export function UsersPage() {
@@ -56,9 +78,14 @@ export function UsersPage() {
   const [role, setRole] = useState('');
   const [premium, setPremium] = useState(false);
   const [page, setPage] = useState(1);
+  const [inspecting, setInspecting] = useState<string | null>(null);
 
   const users = useQuery<UserListResponse>(
     `/v1/admin/users${qs({ q: search, status, role, premium: premium ? 1 : '', page, pageSize: 25 })}`,
+  );
+  const detail = useQuery<UserDetail>(
+    inspecting ? `/v1/admin/users/${encodeURIComponent(inspecting)}` : null,
+    [inspecting],
   );
   const { run, pending, error } = useMutation();
 
@@ -201,6 +228,11 @@ export function UsersPage() {
                 <Cell className="whitespace-nowrap text-xs">{formatDate(row.createdAt)}</Cell>
                 <Cell>
                   <div className="flex justify-end gap-1">
+                    {/* `GET /users/:id` existed with no caller, so there was no
+                        way to see a member's history before acting on them. */}
+                    <Button variant="ghost" size="sm" onClick={() => setInspecting(row.id)}>
+                      View
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => openEdit(row)}>
                       Manage
                     </Button>
@@ -311,6 +343,109 @@ export function UsersPage() {
           </div>
         </Modal>
       )}
+
+      {inspecting && (
+        <Modal title="Member details" onClose={() => setInspecting(null)} wide>
+          {detail.loading && !detail.data && <Spinner label="Loading member" />}
+          {detail.error && <Alert>{detail.error}</Alert>}
+
+          {detail.data && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <span className="grid size-12 shrink-0 place-items-center rounded-full bg-brand-600 text-lg font-bold text-white">
+                  {detail.data.user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="font-semibold text-[var(--text-strong)]">{detail.data.user.name}</p>
+                  <p className="text-sm text-[var(--text-muted)]">{detail.data.user.email}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {detail.data.roles.map((name) => (
+                      <Badge key={name} tone={name === 'admin' ? 'danger' : 'brand'}>
+                        {name}
+                      </Badge>
+                    ))}
+                    <Badge tone={detail.data.user.status === 'active' ? 'success' : 'danger'}>
+                      {detail.data.user.status}
+                    </Badge>
+                    <Badge tone={detail.data.user.emailVerifiedAt ? 'success' : 'warning'}>
+                      {detail.data.user.emailVerifiedAt ? 'Email verified' : 'Email unverified'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="Copies" value={formatNumber(detail.data.stats.copies)} />
+                <Stat label="Saves" value={formatNumber(detail.data.stats.saves)} />
+                <Stat label="Likes" value={formatNumber(detail.data.stats.likes)} />
+              </div>
+
+              <dl className="space-y-1.5 rounded-lg bg-[var(--surface-sunken)] p-3 text-sm">
+                <Detail label="Username" value={detail.data.user.username ?? '—'} />
+                <Detail label="Joined" value={formatDate(detail.data.user.createdAt)} />
+                <Detail
+                  label="Last signed in"
+                  value={detail.data.user.lastLoginAt ? formatDate(detail.data.user.lastLoginAt) : 'Never'}
+                />
+                <Detail
+                  label="Premium until"
+                  value={
+                    detail.data.user.premiumCachedUntil
+                      ? formatDate(detail.data.user.premiumCachedUntil)
+                      : 'Not a member'
+                  }
+                />
+                <Detail label="Sign-in method" value={detail.data.user.oauthProvider ?? 'Password'} />
+                {/* Surfaced because a rising count with a lockout is the signal
+                    that someone is being targeted, not that they forgot. */}
+                <Detail
+                  label="Failed sign-ins"
+                  value={
+                    detail.data.user.lockedUntil
+                      ? `${detail.data.user.failedLoginCount} — locked until ${formatDate(detail.data.user.lockedUntil)}`
+                      : String(detail.data.user.failedLoginCount)
+                  }
+                />
+              </dl>
+
+              {detail.data.user.bio && (
+                <div>
+                  <p className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    Bio
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--text-body)]">{detail.data.user.bio}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setInspecting(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
     </>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--border-line)] p-2.5 text-center">
+      <p className="text-[0.625rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+        {label}
+      </p>
+      <p className="tabular mt-1 text-lg font-bold text-[var(--text-strong)]">{value}</p>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-[var(--text-muted)]">{label}</dt>
+      <dd className="text-right font-medium text-[var(--text-strong)]">{value}</dd>
+    </div>
   );
 }

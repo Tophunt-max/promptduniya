@@ -1,13 +1,12 @@
+import { Link } from 'react-router-dom';
+
+import { BarList, Sparkline } from '@/components/chart';
 import {
   Alert,
   Badge,
   Card,
-  Cell,
-  EmptyState,
   PageHeader,
-  Row,
   Spinner,
-  Table,
   cn,
   formatMoney,
   formatNumber,
@@ -114,59 +113,6 @@ function Stat({
   );
 }
 
-/**
- * Inline sparkline. An SVG polyline avoids pulling a charting library into the
- * bundle for what is a trend indicator.
- */
-function Sparkline({ series, label }: { series: DailySeries; label: string }) {
-  const values = series.values ?? [];
-  const max = Math.max(1, ...values);
-  const points = values
-    .map((value, index) => {
-      const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0;
-      const y = 32 - (value / max) * 28;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-  const total = values.reduce((sum, value) => sum + value, 0);
-
-  return (
-    <div className="card p-4">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
-          {label}
-        </p>
-        <p className="tabular text-base font-bold text-[var(--text-strong)]">
-          {formatNumber(total)}
-        </p>
-      </div>
-      {values.length > 1 ? (
-        <svg
-          viewBox="0 0 100 32"
-          preserveAspectRatio="none"
-          className="mt-3 h-11 w-full overflow-visible"
-          aria-hidden
-        >
-          {/* Filled area under the line. A bare 1px polyline read as a stray
-              diagonal scratch at this size rather than as a chart. */}
-          <polygon points={`0,32 ${points} 100,32`} fill="var(--color-brand-500)" opacity="0.12" />
-          <polyline
-            points={points}
-            fill="none"
-            stroke="var(--color-brand-500)"
-            strokeWidth="1.75"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-      ) : (
-        <p className="mt-3 h-11 text-xs text-[var(--text-muted)]">Not enough data yet.</p>
-      )}
-    </div>
-  );
-}
-
 export function DashboardPage() {
   const stats = useQuery<PlatformStats>('/v1/admin/stats');
   const series = useQuery<SeriesResponse>('/v1/admin/stats/series?days=30');
@@ -253,44 +199,59 @@ export function DashboardPage() {
 
       {series.data && (
         <>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Six sparklines, not four. `promptViews`, `revenue` and `conversions`
+              were already in this response and were being discarded. */}
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Sparkline series={series.data.visitors} label="Visitors" />
-            <Sparkline series={series.data.signups} label="Signups" />
+            <Sparkline series={series.data.promptViews} label="Prompt views" />
             <Sparkline series={series.data.promptCopies} label="Copies" />
-            <Sparkline series={series.data.generatorUsage} label="Generator" />
+            <Sparkline series={series.data.signups} label="Signups" />
+            <Sparkline series={series.data.conversions} label="Subscriptions" />
+            <Sparkline series={series.data.revenue} label="Revenue" format={formatMoney} />
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <Card title="Most viewed prompts">
-              {series.data.topPrompts.length === 0 ? (
-                <EmptyState>No prompt activity yet.</EmptyState>
-              ) : (
-                <Table head={['Prompt', 'Views', 'Copies', 'Likes']}>
-                  {series.data.topPrompts.map((prompt) => (
-                    <Row key={prompt.id}>
-                      <Cell className="font-medium text-ink">{prompt.title}</Cell>
-                      <Cell>{formatNumber(prompt.views)}</Cell>
-                      <Cell>{formatNumber(prompt.copies)}</Cell>
-                      <Cell>{formatNumber(prompt.likes)}</Cell>
-                    </Row>
-                  ))}
-                </Table>
-              )}
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <Card
+              title="Most viewed prompts"
+              actions={
+                <Link
+                  to="/analytics"
+                  className="text-xs font-semibold text-brand-600 hover:underline"
+                >
+                  Full analytics
+                </Link>
+              }
+            >
+              <BarList
+                items={series.data.topPrompts.map((prompt) => ({
+                  label: prompt.title,
+                  value: prompt.views,
+                  hint: `${formatNumber(prompt.copies)} copies`,
+                }))}
+                emptyLabel="No prompt activity yet."
+              />
             </Card>
 
             <Card title="Top searches">
-              {series.data.topSearches.length === 0 ? (
-                <EmptyState>No searches recorded yet.</EmptyState>
-              ) : (
-                <Table head={['Term', 'Searches']}>
-                  {series.data.topSearches.map((search) => (
-                    <Row key={search.term}>
-                      <Cell className="font-medium text-ink">{search.term}</Cell>
-                      <Cell>{formatNumber(search.hits)}</Cell>
-                    </Row>
-                  ))}
-                </Table>
-              )}
+              <BarList
+                items={series.data.topSearches.map((search) => ({
+                  label: search.term,
+                  value: search.hits,
+                }))}
+                emptyLabel="No searches recorded yet."
+              />
+            </Card>
+
+            {/* Also previously fetched and dropped on the floor. */}
+            <Card title="Biggest categories">
+              <BarList
+                items={series.data.topCategories.map((category) => ({
+                  label: category.name,
+                  value: category.promptCount,
+                }))}
+                emptyLabel="No categories yet."
+                color="#0ea5e9"
+              />
             </Card>
           </div>
         </>

@@ -52,6 +52,16 @@ export const RATE_LIMITS = {
   aiGenerate: { name: 'admin:ai-generate', limit: 60, windowSec: 600 },
   /** Discovery and idea previews — one model call each, so a looser bound. */
   aiDiscover: { name: 'admin:ai-discover', limit: 30, windowSec: 600 },
+  /**
+   * Notification broadcasts.
+   *
+   * The tightest limit in the table, and the only one whose purpose is to protect
+   * the members rather than the servers. A broadcast reaches every inbox at once
+   * and cannot be recalled, so the cost of a double-click or a retried fetch is
+   * paid by thousands of people. Six an hour is generous for legitimate use and
+   * makes an accidental storm impossible.
+   */
+  broadcast: { name: 'admin:broadcast', limit: 6, windowSec: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

@@ -55,6 +55,7 @@ interface AdminPromptDetail {
   isTrending: boolean;
   isEditorsPick: boolean;
   isPublished: boolean;
+  scheduledFor: number | null;
   coverImageUrl: string | null;
   coverImageAlt: string | null;
   seoTitle: string | null;
@@ -91,6 +92,24 @@ interface FormState {
   isTrending: boolean;
   isEditorsPick: boolean;
   isPublished: boolean;
+  /** `datetime-local` string. Converted to unix seconds on save. */
+  scheduledFor: string;
+}
+
+/** Unix seconds to the `YYYY-MM-DDTHH:mm` a datetime-local input expects. */
+function toLocalInput(seconds: number | null | undefined): string {
+  if (!seconds) return '';
+  const date = new Date(seconds * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
+function fromLocalInput(value: string): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
 }
 
 const BLANK: FormState = {
@@ -122,6 +141,7 @@ const BLANK: FormState = {
   isTrending: false,
   isEditorsPick: false,
   isPublished: false,
+  scheduledFor: '',
 };
 
 /** Strips empty strings so the API's optional-URL fields validate. */
@@ -160,6 +180,10 @@ function toPayload(form: FormState) {
     isTrending: form.isTrending,
     isEditorsPick: form.isEditorsPick,
     isPublished: form.isPublished,
+    // `promptWriteSchema` has always accepted this and `createPrompt`/`updatePrompt`
+    // have always persisted it — there was simply never an input, so scheduling was
+    // reachable only through the studio and the automation queue.
+    scheduledFor: fromLocalInput(form.scheduledFor),
   };
 }
 
@@ -176,6 +200,7 @@ export function PromptEditPage() {
   const [uploading, setUploading] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [coverNote, setCoverNote] = useState<string | null>(null);
+  const [seoNote, setSeoNote] = useState<string | null>(null);
 
   // Hydrate the form once the prompt arrives.
   useEffect(() => {
@@ -210,6 +235,7 @@ export function PromptEditPage() {
       isTrending: prompt.isTrending,
       isEditorsPick: prompt.isEditorsPick,
       isPublished: prompt.isPublished,
+      scheduledFor: toLocalInput(prompt.scheduledFor),
     });
   }, [existing.data]);
 
@@ -267,6 +293,28 @@ export function PromptEditPage() {
     const stored = await run(() => api.upload<{ url: string }>('/v1/admin/upload', form));
     setUploading(false);
     if (stored) set('coverImageUrl', stored.url);
+  }
+
+  /**
+   * Rewrites just the SEO title and description with a language model.
+   *
+   * Deliberately narrow. Regenerating the whole prompt would replace a body the
+   * operator may be happy with, so this touches two fields and nothing else. The
+   * endpoint writes them server-side, hence the note about the form being in sync
+   * rather than needing a save.
+   */
+  async function regenerateSeo() {
+    setSeoNote(null);
+    const result = await run(() =>
+      api.post<{ seoTitle: string; seoDescription: string; engine: string }>(
+        `/v1/admin/prompts/${id}/seo`,
+        {},
+      ),
+    );
+    if (!result) return;
+    set('seoTitle', result.seoTitle);
+    set('seoDescription', result.seoDescription);
+    setSeoNote(`Rewritten by ${result.engine} and already saved.`);
   }
 
   if (!isNew && existing.loading && !existing.data) return <Spinner label="Loading prompt" />;
@@ -594,8 +642,67 @@ export function PromptEditPage() {
                 checked={form.isEditorsPick}
                 onChange={(e) => set('isEditorsPick', e.target.checked)}
               />
+
+              {/* Scheduling. The column, the write schema and the hourly sweep have
+                  all supported this from the start; the form simply never had a
+                  field, so a date could only be set through the studio. */}
+              <div className="border-t border-[var(--border-line)] pt-3">
+                <Field
+                  label="Publish at"
+                  hint="Leave empty to publish manually. A scheduled prompt stays a draft until its time arrives."
+                  error={fieldErrors.scheduledFor}
+                >
+                  <Input
+                    type="datetime-local"
+                    value={form.scheduledFor}
+                    onChange={(e) => set('scheduledFor', e.target.value)}
+                  />
+                </Field>
+
+                {form.scheduledFor && form.isPublished && (
+                  <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    This prompt is already published, so the schedule will never fire. Untick
+                    Published to schedule it.
+                  </p>
+                )}
+
+                {form.scheduledFor && (
+                  <button
+                    type="button"
+                    onClick={() => set('scheduledFor', '')}
+                    className="mt-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+                  >
+                    Clear schedule
+                  </button>
+                )}
+              </div>
             </div>
           </Card>
+
+          {/* SEO assistance. Only offered on a saved prompt, because the endpoint
+              reads the stored row to write from. */}
+          {id && (
+            <Card title="SEO" description="Rewrites only the search title and description.">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                loading={pending}
+                onClick={() => void regenerateSeo()}
+              >
+                Rewrite SEO with AI
+              </Button>
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                Leaves the prompt body untouched. Useful for older prompts whose SEO title is just a
+                copy of the heading.
+              </p>
+              {seoNote && (
+                <p className="mt-2 rounded-lg bg-[var(--surface-sunken)] px-2.5 py-2 text-xs text-[var(--text-body)]">
+                  {seoNote}
+                </p>
+              )}
+            </Card>
+          )}
         </div>
       </div>
     </>

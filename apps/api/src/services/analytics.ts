@@ -12,6 +12,7 @@ import {
   prompts,
   searchQueries,
   subscriptions,
+  tags,
   users,
 } from '@pd/db';
 import { SETTING_KEYS } from '@pd/shared';
@@ -296,4 +297,115 @@ export async function platformStats(): Promise<PlatformStats> {
     totalFavorites,
     generatorRuns,
   };
+}
+
+
+/* --------------------------- Engagement series ---------------------------- */
+
+/**
+ * Favourites and likes per day.
+ *
+ * Both tables carry `createdAt` but no `dayBucket` column — unlike
+ * `prompt_views` and `prompt_copies`, which were designed for this kind of
+ * rollup — so `seriesFrom` cannot be reused and the bucket is derived in SQL
+ * with the same +330 minute IST shift the rest of the app uses.
+ */
+async function seriesFromTimestamp(
+  table: typeof favorites | typeof likes,
+  days: number,
+): Promise<DailySeries> {
+  const buckets = lastNDayBuckets(days);
+  const since = nowSec() - days * 86_400;
+  const rows = await db
+    .select({
+      day: sql<string>`strftime('%Y-%m-%d', ${table.createdAt}, 'unixepoch', '+330 minutes')`,
+      value: count(),
+    })
+    .from(table)
+    .where(gte(table.createdAt, since))
+    .groupBy(sql`1`);
+
+  const map = new Map(rows.map((r) => [r.day, r.value]));
+  return { labels: buckets, values: buckets.map((b) => map.get(b) ?? 0) };
+}
+
+export const dailyFavorites = (days = 30) => seriesFromTimestamp(favorites, days);
+export const dailyLikes = (days = 30) => seriesFromTimestamp(likes, days);
+
+/**
+ * Raw page views per day.
+ *
+ * Distinct from `dailyVisitors`, which counts unique visitor hashes over the
+ * same table. Both are worth showing: the ratio between them is the clearest
+ * single indicator of whether readers browse more than one page.
+ */
+export const dailyPageViews = (days = 30) => seriesFrom(pageViews, days);
+
+/**
+ * The most used tags.
+ *
+ * Reads the denormalised `usageCount` rather than aggregating `prompt_tags`,
+ * because the count is already maintained on write and this query runs on a
+ * dashboard. Only tags actually in use are returned — a tag with a zero count is
+ * orphaned rather than unpopular, and belongs on the tag admin screen instead.
+ */
+export async function topTags(limit = 12) {
+  return db
+    .select({
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      usageCount: tags.usageCount,
+    })
+    .from(tags)
+    .where(sql`${tags.usageCount} > 0`)
+    .orderBy(desc(tags.usageCount))
+    .limit(limit);
+}
+
+/**
+ * Referrers, grouped by host.
+ *
+ * `page_views.referrer` stores a full URL, which is far too granular to read as
+ * a list — a hundred rows of the same site with different paths. Grouping by
+ * host in SQL is not practical in SQLite without a URL function, so the host is
+ * extracted in JS over a bounded window.
+ */
+export async function topReferrers(limit = 10, days = 30) {
+  const buckets = lastNDayBuckets(days);
+  const rows = await db
+    .select({ referrer: pageViews.referrer })
+    .from(pageViews)
+    .where(and(gte(pageViews.dayBucket, buckets[0]!), sql`${pageViews.referrer} is not null`))
+    .limit(4000);
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.referrer) continue;
+    let host: string;
+    try {
+      host = new URL(row.referrer).host || 'direct';
+    } catch {
+      // Not a parseable URL — keep it, truncated, rather than dropping the signal.
+      host = row.referrer.slice(0, 60);
+    }
+    counts.set(host, (counts.get(host) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([host, hits]) => ({ host, hits }))
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, limit);
+}
+
+/** The most viewed pages, so the admin can see what actually gets traffic. */
+export async function topPages(limit = 10, days = 30) {
+  const buckets = lastNDayBuckets(days);
+  return db
+    .select({ path: pageViews.path, hits: count() })
+    .from(pageViews)
+    .where(gte(pageViews.dayBucket, buckets[0]!))
+    .groupBy(pageViews.path)
+    .orderBy(desc(count()))
+    .limit(limit);
 }
