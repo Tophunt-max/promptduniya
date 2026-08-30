@@ -25,7 +25,7 @@
 
   // ---- Next.js incremental cache (ISR / revalidate) ----
   "kv_namespaces": [
-    { "binding": "NEXT_INC_CACHE_KV", "id": "REPLACE_WITH_KV_ID" }
+    { "binding": "NEXT_INC_CACHE_KV", "id": "675afc20820b40e9a04c8a67cf07e37e" }
   ],
 
   // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----
@@ -34,8 +34,8 @@
     "NODE_ENV": "production",
     // Fallback for the HTTP transport. Unused while the service binding is
     // present, but must still be a valid absolute URL.
-    "API_BASE_URL": "https://api.promptduniya.in",
-    "PRIMARY_DOMAIN": "promptduniya.in",
+    "API_BASE_URL": "https://promptduniya-api.onlineilovegames.workers.dev",
+    "PRIMARY_DOMAIN": "promptduniya-web.onlineilovegames.workers.dev",
     "AUTH_SESSION_DAYS": "30",
     "MAINTENANCE_MODE": "false"
   }

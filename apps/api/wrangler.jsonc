@@ -12,16 +12,16 @@
     {
       "binding": "DB",
       "database_name": "promptduniya",
-      "database_id": "REPLACE_WITH_D1_ID_FROM_wrangler_d1_create",
+      "database_id": "24a442ac-4f2d-415d-ae65-2eaba785dcd9",
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
 
   // ---- KV (rate limiting, sessions, settings cache) ----
   "kv_namespaces": [
-    { "binding": "RATE_LIMIT", "id": "REPLACE_WITH_KV_ID" },
-    { "binding": "SESSIONS", "id": "REPLACE_WITH_KV_ID" },
-    { "binding": "CACHE", "id": "REPLACE_WITH_KV_ID" }
+    { "binding": "RATE_LIMIT", "id": "c685562cd88e4ab1bc460cb90ebe9225" },
+    { "binding": "SESSIONS", "id": "990c4968662f44bf941bd78b72a8481d" },
+    { "binding": "CACHE", "id": "64d4ac81e7524baebbd1c3bacc35efad" }
   ],
 
   // ---- R2 (media / uploads) ----
@@ -38,14 +38,14 @@
   // ---- Non-secret vars. Secrets go via `wrangler secret put`. ----
   "vars": {
     "ENVIRONMENT": "production",
-    "WEB_ORIGIN": "https://promptduniya.in",
-    "ADMIN_ORIGIN": "https://admin.promptduniya.in",
+    "WEB_ORIGIN": "https://promptduniya-web.onlineilovegames.workers.dev",
+    "ADMIN_ORIGIN": "https://promptduniya-admin.onlineilovegames.workers.dev",
     "PAYMENTS_MOCK_MODE": "true",
     "PAYMENTS_CURRENCY": "INR",
     "AI_PROVIDER": "template",
     "EMAIL_PROVIDER": "console",
     "EMAIL_FROM": "promptduniya <no-reply@promptduniya.in>",
-    "R2_PUBLIC_URL": "https://media.promptduniya.in"
+    "R2_PUBLIC_URL": "https://pub-9b6fa93bd9db48c4ae3ed41d617ef06d.r2.dev"
   }
 
   // Secrets to set with `wrangler secret put <NAME>`:
