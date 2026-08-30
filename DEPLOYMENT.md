@@ -102,9 +102,14 @@ wrangler secret put CRON_SECRET
 wrangler secret put RAZORPAY_KEY_ID
 wrangler secret put RAZORPAY_KEY_SECRET
 wrangler secret put RAZORPAY_WEBHOOK_SECRET
-wrangler secret put AI_API_KEY          # optional
 wrangler secret put RESEND_API_KEY      # optional
 ```
+
+**AI provider keys do not belong here.** Set them under **Admin → AI providers**,
+which also picks the provider and the model and can test a key before you rely on
+it. `AI_API_KEY` (Gemini) and `OPENAI_API_KEY` are still read as a fallback for
+existing deployments, but a key saved in the console takes priority — so there is
+no reason to use the CLI for these.
 
 **Website:**
 
@@ -307,10 +312,10 @@ Confirm both are registered under the Worker → **Settings → Trigger Events**
 
 It ships disabled, so nothing is generated until you say so:
 
-1. Set a text provider. Workers AI is the default and needs no key; `AI_API_KEY`
-   (Gemini) or `OPENAI_API_KEY` follow the JSON schema more reliably, which
-   matters because the pipeline parses the reply. Check readiness on the
-   Automation screen's provider card.
+1. Set a text provider under **Admin → AI providers**. Workers AI is the default
+   and needs no key; Gemini or OpenAI follow the JSON schema more reliably, which
+   matters because the pipeline parses the reply. Paste a key there and press
+   **Test** to confirm it works before relying on it.
 2. Open **Admin → Automation → Controls**, press **Discover** on the Trends tab to
    seed some topics, then **Generate now** to watch one cycle end to end.
 3. Review what it produced under the Queue tab. Anything scoring below the

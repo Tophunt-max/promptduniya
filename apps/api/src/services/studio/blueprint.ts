@@ -161,7 +161,7 @@ function oneOf(value: unknown, options: readonly string[], fallback: string): st
 const AGE_GROUPS = ['Young adult', 'Adult', 'Middle aged', 'Senior'] as const;
 
 export async function draftPrompt(brief: StudioBrief): Promise<DraftedPrompt> {
-  const engine = resolveTextEngine();
+  const engine = await resolveTextEngine();
   const reply = await engine.complete({
     system: SYSTEM,
     user: userMessage(brief),

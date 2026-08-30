@@ -89,8 +89,22 @@ interface RunRecord {
 interface Overview {
   config: AutomationConfig;
   providers: {
-    text: { provider: string; workersAi: boolean; gemini: boolean; openai: boolean };
-    image: { provider: string; workersAi: boolean; gemini: boolean };
+    // `model` is the resolved id, so this card can say what will actually run
+    // rather than only which provider was picked.
+    text: {
+      provider: string;
+      workersAi: boolean;
+      gemini: boolean;
+      openai: boolean;
+      model: string;
+    };
+    image: {
+      provider: string;
+      workersAi: boolean;
+      gemini: boolean;
+      supportsReference: boolean;
+      model: string;
+    };
     ready: boolean;
   };
   queue: Record<string, number>;
@@ -627,10 +641,21 @@ function ControlsTab({ data, onSaved }: { data: Overview; onSaved(): void }) {
 
         <EnqueueCard onQueued={onSaved} config={data.config} />
 
-        <Card title="Providers">
+        <Card
+          title="Providers"
+          actions={
+            <Link
+              to="/ai-providers"
+              className="text-xs font-semibold text-brand-600 hover:underline"
+            >
+              Keys and models
+            </Link>
+          }
+        >
           <ProviderList
             label="Text"
             active={data.providers.text.provider}
+            model={data.providers.text.model}
             options={[
               { id: 'workers-ai', ready: data.providers.text.workersAi },
               { id: 'gemini', ready: data.providers.text.gemini },
@@ -641,12 +666,18 @@ function ControlsTab({ data, onSaved }: { data: Overview; onSaved(): void }) {
             <ProviderList
               label="Image"
               active={data.providers.image.provider}
+              model={data.providers.image.model}
               options={[
                 { id: 'workers-ai', ready: data.providers.image.workersAi },
                 { id: 'gemini', ready: data.providers.image.gemini },
               ]}
             />
           </div>
+          {!data.providers.ready && (
+            <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+              No usable provider. Add a key on the AI providers screen.
+            </p>
+          )}
         </Card>
       </div>
     </div>
@@ -656,16 +687,24 @@ function ControlsTab({ data, onSaved }: { data: Overview; onSaved(): void }) {
 function ProviderList({
   label,
   active,
+  model,
   options,
 }: {
   label: string;
   active: string;
+  /** The resolved model id, so the card says what will actually run. */
+  model?: string;
   options: { id: string; ready: boolean }[];
 }) {
   return (
     <div>
       <p className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
         {label}
+        {model && (
+          <span className="ml-1.5 font-mono text-[0.625rem] normal-case tracking-normal opacity-80">
+            {model}
+          </span>
+        )}
       </p>
       <ul className="mt-1.5 space-y-1">
         {options.map((option) => (

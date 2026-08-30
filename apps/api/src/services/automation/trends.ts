@@ -425,7 +425,7 @@ export async function expandWithAi(
   let engineName = 'unknown';
 
   try {
-    const engine = resolveTextEngine();
+    const engine = await resolveTextEngine();
     engineName = engine.name;
 
     const categoryNames = [...new Set([...lookup.keys()])].filter((key) => !key.includes('-'));

@@ -17,14 +17,20 @@ import { decodeBase64, type GeneratedImage, type ImageEngine, type ImageRequest 
  * `supportsReference` is false and why the caller rewrites the instruction.
  */
 
-const MODEL = '@cf/black-forest-labs/flux-1-schnell';
+/** Fallback when nothing is configured; matches the previously hardcoded id. */
+const DEFAULT_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 
 /** flux-1-schnell caps the prompt; longer text is silently truncated upstream. */
 const MAX_PROMPT_CHARS = 2000;
 
 export class WorkersAiEngine implements ImageEngine {
-  readonly name = 'workers-ai:flux-1-schnell';
+  readonly name: string;
   readonly supportsReference = false;
+
+  /** The model id is configuration now, so it can be changed from the console. */
+  constructor(private readonly model: string = DEFAULT_MODEL) {
+    this.name = `workers-ai:${model.split('/').pop() ?? model}`;
+  }
 
   async generate(request: ImageRequest): Promise<GeneratedImage> {
     const ai = useAi();
@@ -51,7 +57,7 @@ export class WorkersAiEngine implements ImageEngine {
     let response: unknown;
     try {
       response = await (ai as { run: (model: string, input: unknown) => Promise<unknown> }).run(
-        MODEL,
+        this.model,
         { prompt, steps: 6 },
       );
     } catch (error) {

@@ -23,7 +23,8 @@ import {
  */
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const MODEL = 'gemini-2.5-flash-image';
+/** Fallback when nothing is configured; matches the previously hardcoded id. */
+const DEFAULT_MODEL = 'gemini-2.5-flash-image';
 
 /**
  * Gemini accepts camelCase on the way in but has shipped both spellings on the
@@ -43,14 +44,24 @@ interface GeminiPart {
 }
 
 export class GeminiImageEngine implements ImageEngine {
-  readonly name = `gemini:${MODEL}`;
+  readonly name: string;
   readonly supportsReference = true;
 
+  /**
+   * Key and model are injected rather than read from the environment, so both
+   * are settable from the admin console. See services/ai-providers.ts.
+   */
+  constructor(
+    private readonly apiKey: string,
+    private readonly model: string = DEFAULT_MODEL,
+  ) {
+    this.name = `gemini:${model}`;
+  }
+
   async generate(request: ImageRequest): Promise<GeneratedImage> {
-    const c = config();
-    if (!c.aiApiKey) {
+    if (!this.apiKey) {
       throw AppError.badRequest(
-        'AI_API_KEY is not set. Create a free key at aistudio.google.com/apikey and store it with `wrangler secret put AI_API_KEY`.',
+        'No Gemini API key is configured. Add one on the AI providers screen, or create a free key at aistudio.google.com/apikey.',
       );
     }
 
@@ -67,9 +78,9 @@ export class GeminiImageEngine implements ImageEngine {
     }
     parts.push({ text: this.buildText(request) });
 
-    const response = await fetch(`${BASE}/models/${MODEL}:generateContent`, {
+    const response = await fetch(`${BASE}/models/${encodeURIComponent(this.model)}:generateContent`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': c.aiApiKey },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
         generationConfig: { responseModalities: ['IMAGE'], temperature: 0.85 },

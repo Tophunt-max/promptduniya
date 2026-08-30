@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 
 import {
+  AI_SECRET_SETTING_KEYS,
   articleWriteSchema,
   categoryWriteSchema,
   couponWriteSchema,
@@ -82,7 +83,12 @@ import {
   topPrompts,
   topSearches,
 } from '../services/analytics';
-import { getSettings, setSettings, type SettingValue } from '../services/settings';
+import {
+  getSettings,
+  redactSecretSettings,
+  setSettings,
+  type SettingValue,
+} from '../services/settings';
 import { adminListSubscriptions } from '../services/subscriptions';
 import {
   ALLOWED_MIME_TYPES,
@@ -691,15 +697,34 @@ admin.get('/logs', async (c) => {
 
 admin.get('/settings', async (c) => {
   requireAdmin(c);
-  return c.json({ ok: true, data: await getSettings() });
+  // Provider API keys live in this table so they can be entered from the console.
+  // They must never be sent back out — see redactSecretSettings.
+  return c.json({ ok: true, data: redactSecretSettings(await getSettings()) });
 });
 
 admin.put('/settings', async (c) => {
   const claims = requireAdmin(c);
   const body = (await c.req.json()) as Record<string, SettingValue>;
+
+  /*
+   * Secrets are not writable through this endpoint.
+   *
+   * Two reasons. `GET` returns them as the placeholder `__set__`, so a screen that
+   * round-tripped the whole map would overwrite a real key with that literal and
+   * silently break every AI call. And credentials deserve a route that is
+   * explicitly about credentials — PUT /v1/admin/ai-config — rather than arriving
+   * in a bag of forty unrelated scalars.
+   */
+  const rejected = AI_SECRET_SETTING_KEYS.filter((key) => key in body);
+  if (rejected.length > 0) {
+    throw AppError.badRequest(
+      `Set API keys on the AI providers screen, not here (${rejected.join(', ')}).`,
+    );
+  }
+
   await setSettings(body, claims.sub);
   await logAdminAction({ actorId: claims.sub, action: 'settings.update', meta: { keys: Object.keys(body) }, ip: clientIp(c) });
-  return c.json({ ok: true, data: await getSettings() });
+  return c.json({ ok: true, data: redactSecretSettings(await getSettings()) });
 });
 
 export default admin;

@@ -484,3 +484,67 @@ export const AUTOMATION_SETTING_KEYS = {
 
 export type AutomationSettingKey =
   (typeof AUTOMATION_SETTING_KEYS)[keyof typeof AUTOMATION_SETTING_KEYS];
+
+
+/* ============================ AI providers ============================= */
+
+/**
+ * AI provider configuration, stored in `site_settings`.
+ *
+ * Previously all of this lived in `wrangler.jsonc` vars and Worker secrets, which
+ * meant switching from Workers AI to Gemini, or changing which model writes the
+ * prompts, required editing a config file and redeploying. There was no way to do
+ * either from the console, and no way to enter an API key at all without the
+ * `wrangler` CLI.
+ *
+ * Model ids are stored as free text rather than an enum on purpose. Providers
+ * retire models on their own schedule — this codebase already lost a production
+ * afternoon to a pinned `llama-3.1-8b-instruct` being deprecated out from under it
+ * — so an operator has to be able to type whatever is current today without
+ * waiting for a release. The presets in services/ai-providers.ts are suggestions,
+ * not a closed set.
+ */
+export const AI_SETTING_KEYS = {
+  /** Which provider writes prompts, ideas and SEO: workers-ai | gemini | openai. */
+  textProvider: 'ai.text_provider',
+  /** Which provider draws covers: workers-ai | gemini | none. */
+  imageProvider: 'ai.image_provider',
+  /** The public prompt generator: template | gemini. */
+  generatorProvider: 'ai.generator_provider',
+
+  geminiTextModel: 'ai.gemini_text_model',
+  openaiTextModel: 'ai.openai_text_model',
+  /** Comma-separated fallback chain — Workers AI retires models frequently. */
+  workersTextModels: 'ai.workers_text_models',
+
+  geminiImageModel: 'ai.gemini_image_model',
+  workersImageModel: 'ai.workers_image_model',
+
+  /** Secrets. Never returned by any endpoint; see AI_SECRET_SETTING_KEYS. */
+  geminiApiKey: 'ai.gemini_api_key',
+  openaiApiKey: 'ai.openai_api_key',
+} as const;
+
+export type AiSettingKey = (typeof AI_SETTING_KEYS)[keyof typeof AI_SETTING_KEYS];
+
+/**
+ * Setting keys whose values must never leave the API.
+ *
+ * `GET /v1/admin/settings` returns the whole settings map, so without an explicit
+ * deny-list an API key stored here would be handed to the browser on every visit
+ * to the settings screen. The admin route redacts these; the services that need
+ * the real value read it directly.
+ */
+export const AI_SECRET_SETTING_KEYS: readonly string[] = [
+  AI_SETTING_KEYS.geminiApiKey,
+  AI_SETTING_KEYS.openaiApiKey,
+];
+
+export const TEXT_PROVIDERS = ['workers-ai', 'gemini', 'openai'] as const;
+export type TextProvider = (typeof TEXT_PROVIDERS)[number];
+
+export const IMAGE_PROVIDERS = ['workers-ai', 'gemini', 'none'] as const;
+export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
+
+export const GENERATOR_PROVIDERS = ['template', 'gemini'] as const;
+export type GeneratorProvider = (typeof GENERATOR_PROVIDERS)[number];

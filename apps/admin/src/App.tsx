@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminLayout } from './components/layout';
 import { Spinner } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
+import { AiProvidersPage } from './pages/ai-providers';
 import { AnalyticsPage } from './pages/analytics';
 import { ArticlesPage } from './pages/articles';
 import { AutomationPage } from './pages/automation';
@@ -118,6 +119,14 @@ export function App() {
               element={
                 <RequireAdmin>
                   <LogsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="ai-providers"
+              element={
+                <RequireAdmin>
+                  <AiProvidersPage />
                 </RequireAdmin>
               }
             />
