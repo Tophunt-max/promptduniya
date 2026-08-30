@@ -25,6 +25,7 @@ import { SEED_ARTICLES } from './seed/articles';
 import { SEED_CATEGORIES, SEED_PLANS, SEED_TAGS } from './seed/catalog';
 import { EXTRA_PROMPTS } from './seed/prompts-extra';
 import { FREE_PROMPTS } from './seed/prompts-free';
+import { GEMINI_EDIT_PROMPTS } from './seed/prompts-gemini-edit';
 import { PREMIUM_PROMPTS } from './seed/prompts-premium';
 import type { SeedPrompt } from './seed/prompt-types';
 
@@ -226,7 +227,12 @@ function main() {
   section('Tags');
   const tagIds = new Map<string, string>();
   const allTagNames = new Set<string>(SEED_TAGS);
-  const allPrompts: SeedPrompt[] = [...FREE_PROMPTS, ...PREMIUM_PROMPTS, ...EXTRA_PROMPTS];
+  const allPrompts: SeedPrompt[] = [
+    ...FREE_PROMPTS,
+    ...PREMIUM_PROMPTS,
+    ...EXTRA_PROMPTS,
+    ...GEMINI_EDIT_PROMPTS,
+  ];
   // Tags referenced by prompts but missing from SEED_TAGS still need rows.
   for (const prompt of allPrompts) for (const tag of prompt.tags) allTagNames.add(tag);
 
