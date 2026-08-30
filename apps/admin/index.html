@@ -5,7 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Internal tool: never index, never follow. -->
     <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="light dark" />
     <title>promptduniya · admin</title>
+    <script>
+      /*
+       * Applies the stored theme before the first paint.
+       *
+       * Without this the console renders light, then React mounts and flips it
+       * to dark — a visible flash on every page load. Kept inline and tiny for
+       * that reason; it must run before the stylesheet paints. Mirrors the
+       * storage key used by src/components/theme.tsx.
+       */
+      (function () {
+        try {
+          var stored = localStorage.getItem('pd-admin-theme');
+          var dark =
+            stored === 'dark' ||
+            (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {
+          /* private mode — fall back to the light default */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

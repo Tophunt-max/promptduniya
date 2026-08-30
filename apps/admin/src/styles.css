@@ -1,6 +1,24 @@
 @import 'tailwindcss';
 
+/**
+ * Admin design tokens.
+ *
+ * Two layers, deliberately. The `@theme` block holds the raw ramps that Tailwind
+ * turns into utilities (`bg-brand-600`, `text-ink-400`). The `:root` /
+ * `html.dark` blocks below hold *semantic* surfaces — "raised", "sunken",
+ * "border" — which components reference through `bg-[var(--surface-raised)]`.
+ *
+ * The split is what makes dark mode a single class toggle rather than a
+ * `dark:` variant on every element: swapping the semantic layer re-themes the
+ * whole console, and no component needs to know which mode it is in.
+ *
+ * The console also has its own navy scale, separate from the public site's
+ * violet. An admin tool that looks identical to the customer-facing site is a
+ * genuine hazard — an operator glancing between two tabs should never be in
+ * doubt about which one they are typing into.
+ */
 @theme {
+  /* Brand — kept in step with the public site so the two feel related. */
   --color-brand-50: #f2f0ff;
   --color-brand-100: #e6e2ff;
   --color-brand-200: #cdc6ff;
@@ -12,31 +30,205 @@
   --color-brand-800: #3c28ab;
   --color-brand-900: #2f2185;
 
-  --color-ink: #1a1626;
-  --color-body: #4d4760;
-  --color-muted: #6f6880;
-  --color-line: #eceaf4;
-  --color-surface: #ffffff;
-  --color-canvas: #f7f6fb;
+  /* Navy — the console chrome. Sidebar, top bar, dark surfaces. */
+  --color-navy-50: #f4f6fb;
+  --color-navy-100: #e8ecf5;
+  --color-navy-200: #cfd6e8;
+  --color-navy-300: #a3aecb;
+  --color-navy-400: #6f7da3;
+  --color-navy-500: #4c5a80;
+  --color-navy-600: #364268;
+  --color-navy-700: #26304f;
+  --color-navy-800: #1a2238;
+  --color-navy-900: #121828;
+  --color-navy-950: #0b0f1a;
+
+  /**
+   * Compatibility aliases.
+   *
+   * The page files use the original flat utilities — `bg-surface`, `text-ink`,
+   * `border-line`, `text-muted` — in about seventy places. Rather than rewrite
+   * every one, those names now resolve to the semantic variables above.
+   *
+   * This is not just less churn: because the indirection is a CSS variable
+   * resolved at computed-value time, every existing screen picks up dark mode
+   * for free the moment `html.dark` swaps the semantic layer. A find-and-replace
+   * would have got the same look with none of that.
+   */
+  --color-ink: var(--text-strong);
+  --color-body: var(--text-body);
+  --color-muted: var(--text-muted);
+  --color-line: var(--border-line);
+  --color-surface: var(--surface-raised);
+  --color-canvas: var(--surface-canvas);
+
+  --radius-card: 0.875rem;
+
+  --shadow-card: 0 1px 2px rgb(11 15 26 / 0.04), 0 6px 16px -10px rgb(11 15 26 / 0.14);
+  --shadow-pop: 0 2px 4px rgb(11 15 26 / 0.05), 0 16px 32px -16px rgb(11 15 26 / 0.3);
+
+  --animate-fade-in: admin-fade-in 0.16s ease-out both;
+  --animate-slide-in: admin-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @layer base {
+  :root {
+    --surface-canvas: #f6f7fb;
+    --surface-raised: #ffffff;
+    --surface-sunken: #eef0f7;
+    --surface-hover: #f2f3f9;
+
+    --border-line: #e4e7f1;
+    --border-strong: #ced4e5;
+
+    --text-strong: #131828;
+    --text-body: #4a5372;
+    --text-muted: #77809c;
+
+    /* Sidebar is dark in both themes: it is chrome, not content. */
+    --nav-bg: #121828;
+    --nav-border: #232c45;
+    --nav-text: #a3aecb;
+    --nav-text-active: #ffffff;
+    --nav-active-bg: #26304f;
+  }
+
+  html.dark {
+    --surface-canvas: #0b0f1a;
+    --surface-raised: #131828;
+    --surface-sunken: #0f1524;
+    --surface-hover: #1a2238;
+
+    --border-line: #232c45;
+    --border-strong: #33405f;
+
+    --text-strong: #eef1f8;
+    --text-body: #a8b2cc;
+    --text-muted: #7d87a3;
+
+    --nav-bg: #0b0f1a;
+    --nav-border: #1c2438;
+    --nav-text: #97a2bf;
+    --nav-text-active: #ffffff;
+    --nav-active-bg: #1e2740;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
-    background-color: var(--color-canvas);
-    color: var(--color-ink);
+    background-color: var(--surface-canvas);
+    color: var(--text-strong);
+    /* Self-hosted by @fontsource-variable/inter (imported in main.tsx).
+       It has to be self-hosted rather than pulled from Google: the console's
+       own CSP in public/_headers sets `font-src 'self' data:`, so a remote
+       webfont would be blocked by the very headers we ship. */
     font-family:
-      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  * {
+    border-color: var(--border-line);
   }
 
   /* Visible keyboard focus everywhere — this is an internal tool used heavily
      with the keyboard. */
   :focus-visible {
-    outline: 2px solid var(--color-brand-600);
+    outline: 2px solid var(--color-brand-500);
     outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Numbers in tables and stat cards must not jitter as they update. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .card {
+    background-color: var(--surface-raised);
+    border: 1px solid var(--border-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .field {
+    width: 100%;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border-line);
+    background-color: var(--surface-raised);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-strong);
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+
+  .field::placeholder {
+    color: var(--text-muted);
+  }
+
+  .field:focus {
+    border-color: var(--color-brand-500);
+    box-shadow: 0 0 0 3px rgb(111 79 247 / 0.16);
+    outline: none;
+  }
+
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 999px;
+  }
+}
+
+@keyframes admin-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes admin-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -8,9 +8,21 @@ import {
   Row,
   Spinner,
   Table,
+  cn,
   formatMoney,
   formatNumber,
 } from '@/components/ui';
+import {
+  CopyIcon,
+  CrownIcon,
+  EyeIcon,
+  PromptsIcon,
+  RupeeIcon,
+  SettingsIcon,
+  TrendUpIcon,
+  UsersIcon,
+  type IconProps,
+} from '@/components/icons';
 import { useQuery } from '@/lib/use-api';
 
 interface PlatformStats {
@@ -56,12 +68,48 @@ interface ModerationCounts {
   newMessages: number;
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/**
+ * Metric tile.
+ *
+ * The icon is the point of the redesign: twelve of these in a grid used to be
+ * twelve identical rectangles of text, so finding "Revenue" meant reading every
+ * label. A tinted glyph gives each one a shape the eye can pick out, and the
+ * value now leads at the size the label used to share.
+ */
+function Stat({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = 'brand',
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  icon: (props: IconProps) => React.ReactElement;
+  tone?: 'brand' | 'emerald' | 'amber' | 'rose';
+}) {
+  const tones: Record<string, string> = {
+    brand: 'bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-300',
+    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300',
+    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300',
+    rose: 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300',
+  };
+
   return (
-    <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1 text-2xl font-bold tracking-tight text-ink">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+    <div className="card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          {label}
+        </p>
+        <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', tones[tone])}>
+          <Icon size={16} />
+        </span>
+      </div>
+      <p className="tabular mt-2 text-[1.75rem] font-bold leading-none text-[var(--text-strong)]">
+        {value}
+      </p>
+      {hint && <p className="mt-1.5 text-xs text-[var(--text-muted)]">{hint}</p>}
     </div>
   );
 }
@@ -76,30 +124,44 @@ function Sparkline({ series, label }: { series: DailySeries; label: string }) {
   const points = values
     .map((value, index) => {
       const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0;
-      const y = 30 - (value / max) * 28;
+      const y = 32 - (value / max) * 28;
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(' ');
   const total = values.reduce((sum, value) => sum + value, 0);
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-      <div className="flex items-baseline justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-        <p className="text-sm font-bold text-ink">{formatNumber(total)}</p>
+    <div className="card p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          {label}
+        </p>
+        <p className="tabular text-base font-bold text-[var(--text-strong)]">
+          {formatNumber(total)}
+        </p>
       </div>
       {values.length > 1 ? (
-        <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="mt-2 h-10 w-full" aria-hidden>
+        <svg
+          viewBox="0 0 100 32"
+          preserveAspectRatio="none"
+          className="mt-3 h-11 w-full overflow-visible"
+          aria-hidden
+        >
+          {/* Filled area under the line. A bare 1px polyline read as a stray
+              diagonal scratch at this size rather than as a chart. */}
+          <polygon points={`0,32 ${points} 100,32`} fill="var(--color-brand-500)" opacity="0.12" />
           <polyline
             points={points}
             fill="none"
-            stroke="var(--color-brand-600)"
-            strokeWidth="1.5"
+            stroke="var(--color-brand-500)"
+            strokeWidth="1.75"
+            strokeLinejoin="round"
+            strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
           />
         </svg>
       ) : (
-        <p className="mt-2 text-xs text-muted">Not enough data yet.</p>
+        <p className="mt-3 h-11 text-xs text-[var(--text-muted)]">Not enough data yet.</p>
       )}
     </div>
   );
@@ -139,40 +201,53 @@ export function DashboardPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat
             label="Members"
+            icon={UsersIcon}
             value={formatNumber(stats.data.totalUsers)}
             hint={`${formatNumber(stats.data.newUsers7d)} joined this week`}
           />
           <Stat
             label="Premium"
+            icon={CrownIcon}
+            tone="amber"
             value={formatNumber(stats.data.premiumUsers)}
             hint={`${formatNumber(stats.data.activeUsers30d)} active in 30 days`}
           />
           <Stat
             label="Revenue (30d)"
+            icon={RupeeIcon}
+            tone="emerald"
             value={formatMoney(stats.data.mrrMinor)}
             hint={`${formatMoney(stats.data.totalRevenueMinor)} lifetime`}
           />
           <Stat
             label="Payments"
+            icon={TrendUpIcon}
+            tone="emerald"
             value={formatNumber(stats.data.successfulPayments)}
             hint={`${formatNumber(stats.data.failedPayments)} failed`}
           />
           <Stat
             label="Prompts"
+            icon={PromptsIcon}
             value={formatNumber(stats.data.publishedPrompts)}
             hint={`${formatNumber(stats.data.totalPrompts)} total · ${formatNumber(
               stats.data.premiumPrompts,
             )} premium`}
           />
-          <Stat label="Views" value={formatNumber(stats.data.promptViews)} />
+          <Stat label="Views" value={formatNumber(stats.data.promptViews)} icon={EyeIcon} />
           <Stat
             label="Copies"
+            icon={CopyIcon}
             value={formatNumber(stats.data.promptCopies)}
             hint={`${formatNumber(stats.data.totalFavorites)} saves · ${formatNumber(
               stats.data.totalLikes,
             )} likes`}
           />
-          <Stat label="Generator runs" value={formatNumber(stats.data.generatorRuns)} />
+          <Stat
+            label="Generator runs"
+            value={formatNumber(stats.data.generatorRuns)}
+            icon={SettingsIcon}
+          />
         </div>
       )}
 

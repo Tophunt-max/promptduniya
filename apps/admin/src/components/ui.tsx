@@ -12,9 +12,11 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300',
-  outline: 'border border-line bg-white text-ink hover:bg-canvas',
-  ghost: 'text-body hover:bg-canvas',
+  primary:
+    'bg-brand-600 text-white shadow-[0_6px_16px_-8px_rgb(91_61_245/0.7)] hover:bg-brand-700 disabled:bg-brand-300 disabled:shadow-none',
+  outline:
+    'border border-[var(--border-strong)] bg-[var(--surface-raised)] text-[var(--text-strong)] hover:border-brand-400 hover:text-brand-600',
+  ghost: 'text-[var(--text-body)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 disabled:bg-rose-300',
 };
 
@@ -35,7 +37,8 @@ export function Button({
       {...rest}
       disabled={rest.disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-[background-color,color,box-shadow,transform] duration-150',
+        'active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-70',
         size === 'sm' ? 'px-3 py-1.5 text-sm' : 'px-4 py-2 text-sm',
         BUTTON_VARIANTS[variant],
         className,
@@ -48,8 +51,8 @@ export function Button({
 
 /* --------------------------------- Fields --------------------------------- */
 
-const FIELD_CLASS =
-  'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-brand-500 focus:outline-none';
+/** See the `.field` recipe in styles.css — it carries the focus ring too. */
+const FIELD_CLASS = 'field';
 
 export function Field({
   label,
@@ -64,12 +67,12 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-semibold text-ink">{label}</span>
+      <span className="mb-1.5 block text-sm font-semibold text-[var(--text-strong)]">{label}</span>
       {children}
       {error ? (
-        <span className="mt-1 block text-xs font-medium text-rose-600">{error}</span>
+        <span className="mt-1.5 block text-xs font-medium text-rose-600">{error}</span>
       ) : hint ? (
-        <span className="mt-1 block text-xs text-muted">{hint}</span>
+        <span className="mt-1.5 block text-xs text-[var(--text-muted)]">{hint}</span>
       ) : null}
     </label>
   );
@@ -95,11 +98,11 @@ export function Checkbox({
   ...rest
 }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
-    <label className="flex items-center gap-2 text-sm font-medium text-ink">
+    <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-[var(--text-strong)]">
       <input
         {...rest}
         type="checkbox"
-        className="size-4 rounded border-line text-brand-600 focus:ring-brand-500"
+        className="size-4 rounded border-[var(--border-strong)] text-brand-600 accent-brand-600"
       />
       {label}
     </label>
@@ -123,13 +126,15 @@ export function Card({
 }) {
   return (
     <section
-      className={cn('rounded-xl border border-line bg-surface shadow-sm', className)}
+      className={cn('card', className)}
     >
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border-line)] px-4 py-3.5">
           <div>
-            {title && <h2 className="text-sm font-bold text-ink">{title}</h2>}
-            {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
+            {title && <h2 className="text-sm font-bold text-[var(--text-strong)]">{title}</h2>}
+            {description && (
+              <p className="mt-0.5 text-xs text-[var(--text-muted)]">{description}</p>
+            )}
           </div>
           {actions}
         </header>
@@ -149,10 +154,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1 text-sm text-body">{description}</p>}
+        <h1 className="text-[1.375rem] font-bold text-[var(--text-strong)]">{title}</h1>
+        {description && (
+          <p className="mt-1 text-sm text-[var(--text-body)]">{description}</p>
+        )}
       </div>
       {actions}
     </header>
@@ -164,11 +171,11 @@ export function PageHeader({
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'brand';
 
 const TONES: Record<Tone, string> = {
-  neutral: 'bg-canvas text-body',
-  success: 'bg-emerald-50 text-emerald-700',
-  warning: 'bg-amber-50 text-amber-700',
-  danger: 'bg-rose-50 text-rose-700',
-  brand: 'bg-brand-50 text-brand-700',
+  neutral: 'bg-[var(--surface-sunken)] text-[var(--text-body)]',
+  success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
+  warning: 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
+  danger: 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
+  brand: 'bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-200',
 };
 
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
@@ -191,9 +198,12 @@ export function Table({ head, children }: { head: ReactNode[]; children: ReactNo
     <div className="-mx-4 overflow-x-auto px-4">
       <table className="w-full min-w-160 border-collapse text-sm">
         <thead>
-          <tr className="border-b border-line text-left">
+          <tr className="border-b border-[var(--border-line)] text-left">
             {head.map((cell, index) => (
-              <th key={index} className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted">
+              <th
+                key={index}
+                className="px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]"
+              >
                 {cell}
               </th>
             ))}
@@ -206,11 +216,17 @@ export function Table({ head, children }: { head: ReactNode[]; children: ReactNo
 }
 
 export function Row({ children }: { children: ReactNode }) {
-  return <tr className="border-b border-line/70 last:border-0 hover:bg-canvas/60">{children}</tr>;
+  return (
+    <tr className="border-b border-[var(--border-line)] transition-colors last:border-0 hover:bg-[var(--surface-hover)]">
+      {children}
+    </tr>
+  );
 }
 
 export function Cell({ children, className }: { children?: ReactNode; className?: string }) {
-  return <td className={cn('px-3 py-2.5 align-middle text-body', className)}>{children}</td>;
+  return (
+    <td className={cn('px-3 py-3 align-middle text-[var(--text-body)]', className)}>{children}</td>
+  );
 }
 
 /* -------------------------------- Feedback -------------------------------- */
@@ -228,14 +244,14 @@ export function Alert({ tone = 'danger', children }: { tone?: Tone; children: Re
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
   return (
-    <p role="status" className="py-10 text-center text-sm text-muted">
+    <p role="status" className="py-12 text-center text-sm text-[var(--text-muted)]">
       {label}…
     </p>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="py-10 text-center text-sm text-muted">{children}</p>;
+  return <p className="py-12 text-center text-sm text-[var(--text-muted)]">{children}</p>;
 }
 
 /* --------------------------------- Modal ---------------------------------- */
@@ -253,24 +269,24 @@ export function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-950/55 p-4 py-10 backdrop-blur-sm animate-[admin-fade-in_0.16s_ease-out]"
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
       <div
         className={cn(
-          'w-full rounded-xl border border-line bg-surface shadow-xl',
+          'card w-full shadow-[var(--shadow-pop)]',
           wide ? 'max-w-3xl' : 'max-w-lg',
         )}
       >
-        <header className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="text-sm font-bold text-ink">{title}</h2>
+        <header className="flex items-center justify-between border-b border-[var(--border-line)] px-4 py-3.5">
+          <h2 className="text-sm font-bold text-[var(--text-strong)]">{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded px-2 text-lg leading-none text-muted hover:text-ink"
+            className="grid size-8 place-items-center rounded-lg text-lg leading-none text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
           >
             ×
           </button>
