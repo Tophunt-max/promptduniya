@@ -242,6 +242,35 @@ Called over `fetch`, so no SDK is bundled.
 
 ---
 
+## Deploying (all three Workers)
+
+```bash
+export CLOUDFLARE_API_TOKEN=...     # 'Edit Cloudflare Workers' template, 40 chars
+export CLOUDFLARE_ACCOUNT_ID=...    # 32 hex characters
+# or, instead of both:  npx wrangler login
+
+npm run deploy                      # migrate, then api → web → admin
+npm run deploy -- api               # one app only
+npm run deploy -- --skip-migrate
+```
+
+Three things about this deployment are easy to get wrong by hand, which is why
+`scripts/deploy.sh` exists rather than three `wrangler deploy` calls:
+
+- **Order.** `apps/web` holds a service binding to `promptduniya-api`, so the API
+  has to go first. Deploying the website first is not a hard error — it is a site
+  that half works, which is harder to notice.
+- **Migrations.** The Worker has to be deployed *after* its migrations reach the
+  remote D1, or every automation endpoint throws "no such table" while the console
+  looks healthy. They are additive, so applying them first is safe.
+- **The web build.** `next build` alone is not deployable; Cloudflare needs the
+  bundle from `opennextjs-cloudflare build`.
+
+The script verifies the API token against Cloudflare before doing anything, warns
+about missing Worker secrets, and stops without deploying if a migration fails.
+
+---
+
 ## Step 9 — The scheduled jobs
 
 `apps/api/wrangler.jsonc` declares two cron triggers. Both register on deploy with

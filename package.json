@@ -23,6 +23,7 @@
     "provision": "node scripts/provision.mjs",
     "provision:dry-run": "node scripts/provision.mjs --dry-run",
     "covers:upload": "node scripts/upload-covers.mjs",
+    "deploy": "bash scripts/deploy.sh",
     "deploy:api": "npm run deploy --workspace apps/api",
     "deploy:web": "npm run deploy --workspace apps/web",
     "deploy:admin": "npm run deploy --workspace apps/admin",
