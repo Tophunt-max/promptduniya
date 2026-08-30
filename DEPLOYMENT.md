@@ -242,18 +242,53 @@ Called over `fetch`, so no SDK is bundled.
 
 ---
 
-## Step 9 — The nightly job
+## Step 9 — The scheduled jobs
 
-`apps/api/wrangler.jsonc` declares `"crons": ["30 19 * * *"]` — 19:30 UTC, which is 01:00 IST. It runs on deploy with no extra setup, and performs four jobs: publish scheduled prompts, recompute trending scores, expire lapsed subscriptions, and warn members whose plan ends within five days.
+`apps/api/wrangler.jsonc` declares two cron triggers. Both register on deploy with
+no extra setup, and `scheduled()` dispatches on which expression fired.
 
-To run it on demand:
+| Expression | When | What it does |
+|---|---|---|
+| `30 19 * * *` | 19:30 UTC / 01:00 IST | Nightly maintenance: recompute trending scores, expire lapsed subscriptions, warn members whose plan ends within five days, release abandoned queue items, and purge automation logs past their retention window. |
+| `0 * * * *` | Every hour | Publish prompts whose scheduled time has passed, then tick the content automation. |
+
+Publishing runs hourly rather than nightly because `prompts.scheduled_for` is
+stored to the second: while it only ran at 19:30 UTC, a prompt scheduled for 09:00
+did not appear until 01:00 the following morning.
+
+The hourly tick is also what makes the automation schedule editable. Cron
+expressions are fixed at deploy time, so the Worker wakes every hour and the
+`automation.publish_hours` setting decides which of those wake-ups actually
+generate. **Change the posting schedule from Admin → Automation, not from
+`wrangler.jsonc`.**
+
+To run either on demand:
 
 ```bash
 curl -X POST https://api.yourdomain/v1/cron/maintenance \
   -H "x-cron-secret: $CRON_SECRET"
+
+curl -X POST https://api.yourdomain/v1/cron/hourly \
+  -H "x-cron-secret: $CRON_SECRET"
 ```
 
-Confirm it is registered under the Worker → **Settings → Trigger Events**.
+Confirm both are registered under the Worker → **Settings → Trigger Events**.
+
+### Turning the automation on
+
+It ships disabled, so nothing is generated until you say so:
+
+1. Set a text provider. Workers AI is the default and needs no key; `AI_API_KEY`
+   (Gemini) or `OPENAI_API_KEY` follow the JSON schema more reliably, which
+   matters because the pipeline parses the reply. Check readiness on the
+   Automation screen's provider card.
+2. Open **Admin → Automation → Controls**, press **Discover** on the Trends tab to
+   seed some topics, then **Generate now** to watch one cycle end to end.
+3. Review what it produced under the Queue tab. Anything scoring below the
+   threshold is held as a draft with the failed checks listed.
+4. Only once you are happy with the output: tick **Automation enabled**, and
+   separately **Auto-publish posts that pass**. Leaving auto-publish off gives you
+   a pipeline that generates continuously and still waits for a human.
 
 ---
 

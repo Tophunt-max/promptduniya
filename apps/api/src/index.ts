@@ -12,6 +12,7 @@ import generatorRoutes from './routes/generator';
 import catalogRoutes from './routes/catalog';
 import paymentRoutes from './routes/payments';
 import adminRoutes from './routes/admin';
+import automationRoutes from './routes/automation';
 import viewerRoutes from './routes/viewer';
 import { clientIp } from './middleware';
 import { enforce } from './lib/rate-limit';
@@ -19,6 +20,10 @@ import { hashIp, safeEqual } from './lib/crypto';
 import { processWebhook } from './services/payments';
 import { publishScheduled, recomputeTrending } from './services/prompts';
 import { expireDueSubscriptions, remindExpiringSubscriptions } from './services/subscriptions';
+import { getAutomationConfig } from './services/automation/config';
+import { purgeAutomationLogs } from './services/automation/logs';
+import { releaseStalled } from './services/automation/queue';
+import { automationTick } from './services/automation/runner';
 
 /**
  * promptduniya API — a Hono Worker on Cloudflare.
@@ -65,6 +70,8 @@ app.route('/v1/prompts', promptRoutes);
 app.route('/v1/generator', generatorRoutes);
 app.route('/v1/catalog', catalogRoutes);
 app.route('/v1/payments', paymentRoutes);
+// Mounted before /v1/admin so the more specific prefix wins.
+app.route('/v1/admin/automation', automationRoutes);
 app.route('/v1/admin', adminRoutes);
 app.route('/v1/viewer', viewerRoutes);
 
@@ -113,21 +120,67 @@ app.notFound((c) =>
 );
 
 /**
+ * Scheduled work.
+ *
+ * Two jobs on two cadences, both defined in `wrangler.jsonc`:
+ *
+ *   hourly   `runHourly` — publish anything whose scheduled time has passed, then
+ *            give the content automation a tick.
+ *   nightly  `runMaintenance` — the heavier, once-a-day work: trending scores,
+ *            subscription expiries, and housekeeping on the automation tables.
+ *
+ * Publishing moved to the hourly job for a concrete reason. `prompts.scheduledFor`
+ * is stored to the second, but while `publishScheduled` only ran at 19:30 UTC the
+ * effective granularity was a day: a prompt scheduled for 09:00 went live sixteen
+ * hours late. Since the automation needs an hourly tick anyway, publishing rides
+ * along and the schedule now means roughly what it says.
+ */
+async function runHourly() {
+  // Publishing first, deliberately. It is cheap, it has no external
+  // dependencies, and it must not be starved by a slow or failing AI provider in
+  // the automation step that follows.
+  const published = await publishScheduled();
+  const automation = await automationTick();
+
+  return {
+    published,
+    automation: {
+      ran: automation.ran,
+      runId: automation.runId,
+      succeeded: automation.succeeded,
+      failed: automation.failed,
+      skipped: automation.skipped,
+      stopReason: automation.stopReason,
+    },
+  };
+}
+
+/**
  * Nightly maintenance: publish scheduled prompts, recompute trending scores,
- * expire lapsed subscriptions and warn members whose plan ends soon.
+ * expire lapsed subscriptions, warn members whose plan ends soon, and keep the
+ * automation tables from growing without bound.
  *
  * Exposed both as a Cloudflare cron trigger (see `wrangler.jsonc`) and as an
  * authenticated POST so it can be run on demand. The POST requires
  * `CRON_SECRET` because it mutates platform-wide state.
  */
 async function runMaintenance() {
-  const [published, trending, expired, reminded] = await Promise.all([
+  const [published, trending, expired, reminded, released] = await Promise.all([
     publishScheduled(),
     recomputeTrending(),
     expireDueSubscriptions(),
     remindExpiringSubscriptions(),
+    // Frees queue rows abandoned by a Worker invocation that was killed
+    // mid-item. Nothing else would ever release them.
+    releaseStalled(),
   ]);
-  return { published, trending, expired, reminded };
+
+  // Reads its own retention setting rather than taking a constant, so an operator
+  // can shorten it from the console when the log gets noisy.
+  const config = await getAutomationConfig();
+  const purgedLogs = await purgeAutomationLogs(config.logRetentionDays);
+
+  return { published, trending, expired, reminded, released, purgedLogs };
 }
 
 app.post('/v1/cron/maintenance', async (c) => {
@@ -139,20 +192,68 @@ app.post('/v1/cron/maintenance', async (c) => {
   return c.json({ ok: true, data: await runMaintenance() });
 });
 
+/**
+ * The hourly job, also exposed for an external scheduler.
+ *
+ * Useful when the platform's cron is unavailable, and the only way to exercise
+ * the automation tick end to end without waiting for the top of an hour.
+ */
+app.post('/v1/cron/hourly', async (c) => {
+  const expected = (c.env as unknown as Record<string, string | undefined>).CRON_SECRET ?? '';
+  const provided = c.req.header('x-cron-secret') ?? '';
+  if (!expected || !safeEqual(expected, provided)) {
+    throw AppError.forbidden('Invalid cron secret');
+  }
+  return c.json({ ok: true, data: await runHourly() });
+});
+
+/** Copies the string-valued bindings out of env for the request context. */
+function stringEnvOf(env: CloudflareBindings): Record<string, string | undefined> {
+  const raw = env as unknown as Record<string, unknown>;
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
+}
+
 export default {
   fetch: app.fetch,
-  /** Cloudflare cron entry point. */
-  async scheduled(_event: unknown, env: CloudflareBindings, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    const raw = env as unknown as Record<string, unknown>;
-    const stringEnv: Record<string, string | undefined> = {};
-    for (const [key, value] of Object.entries(raw)) {
-      if (typeof value === 'string') stringEnv[key] = value;
-    }
+  /**
+   * Cloudflare cron entry point.
+   *
+   * Which job runs is decided by `event.cron` matching the expression that fired,
+   * so both schedules share this one handler. The nightly expression is matched
+   * explicitly and everything else falls through to the hourly job: a cron entry
+   * added to wrangler.jsonc without a matching branch here should still do
+   * something sensible rather than silently nothing.
+   */
+  async scheduled(
+    event: { cron?: string },
+    env: CloudflareBindings,
+    ctx: { waitUntil(p: Promise<unknown>): void },
+  ) {
+    const cron = event?.cron ?? '';
+
     ctx.waitUntil(
-      runWithBindings(env, stringEnv, async () => {
-        const result = await runMaintenance();
-        console.info('[cron] maintenance complete:', result);
+      runWithBindings(env, stringEnvOf(env), async () => {
+        try {
+          if (cron === NIGHTLY_CRON) {
+            const result = await runMaintenance();
+            console.info('[cron] nightly maintenance complete:', result);
+          } else {
+            const result = await runHourly();
+            console.info(`[cron] hourly tick complete (${cron || 'unknown schedule'}):`, result);
+          }
+        } catch (error) {
+          // A thrown error here is invisible except in logs, and losing the next
+          // tick because this one failed would compound the problem.
+          console.error('[cron] scheduled run failed:', error);
+        }
       }),
     );
   },
 };
+
+/** Must match the nightly entry in `wrangler.jsonc`. */
+const NIGHTLY_CRON = '30 19 * * *';

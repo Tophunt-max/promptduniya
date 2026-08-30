@@ -205,3 +205,53 @@ export const SearchIcon = (p: IconProps) => (
     <path d="M16 16l4.5 4.5" />
   </Svg>
 );
+
+
+/**
+ * Content automation. A chip, because the distinction the console has to make
+ * everywhere is between work a person did and work the machine did, and the
+ * sparkle already means "generate this one thing for me".
+ */
+export const AutomationIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2.5" />
+    <path d="M10.5 3.5v3M13.5 3.5v3M10.5 17.5v3M13.5 17.5v3M3.5 10.5h3M3.5 13.5h3M17.5 10.5h3M17.5 13.5h3" />
+  </Svg>
+);
+
+/** Re-run or refresh. */
+export const RefreshIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M20 11a8 8 0 1 0-2.5 5.8" />
+    <path d="M20 5.5V11h-5.5" />
+  </Svg>
+);
+
+/** Start a run now. */
+export const PlayIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 5.5l10 6.5-10 6.5z" />
+  </Svg>
+);
+
+export const CheckIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 12.5l5 5 10-11" />
+  </Svg>
+);
+
+export const ClockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Svg>
+);
+
+/** Trend discovery — a radar sweep rather than a rising line (that is TrendUp). */
+export const RadarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 12l6-4.5" />
+  </Svg>
+);

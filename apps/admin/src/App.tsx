@@ -4,6 +4,7 @@ import { AdminLayout } from './components/layout';
 import { Spinner } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
 import { ArticlesPage } from './pages/articles';
+import { AutomationPage } from './pages/automation';
 import { BillingPage } from './pages/billing';
 import { CategoriesPage } from './pages/categories';
 import { CouponsPage } from './pages/coupons';
@@ -60,6 +61,7 @@ export function App() {
             <Route path="prompts/new" element={<PromptEditPage />} />
             <Route path="prompts/:id" element={<PromptEditPage />} />
             <Route path="studio" element={<StudioPage />} />
+            <Route path="automation" element={<AutomationPage />} />
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="articles" element={<ArticlesPage />} />
             <Route path="media" element={<MediaPage />} />

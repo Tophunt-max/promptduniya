@@ -858,6 +858,196 @@ export const rateLimitBuckets = sqliteTable(
   (t) => [index('rate_limit_reset_idx').on(t.resetAt)],
 );
 
+/* ========================= Content automation ========================== */
+
+/**
+ * Topics the trend scanner has surfaced, before any prompt exists for them.
+ *
+ * Kept as its own table rather than being generated on the fly for two reasons.
+ * A signal has to be de-duplicated across scans — `normalized` is unique, so
+ * rescanning the same festival week does not enqueue the same idea four times.
+ * And a signal has to remember that it was already used, otherwise the catalogue
+ * fills up with variations on whatever the search log happened to be loud about.
+ */
+export const trendSignals = sqliteTable(
+  'trend_signals',
+  {
+    id: text('id').primaryKey(),
+    /** Human-readable topic, e.g. "Chhath Puja portraits at the ghat". */
+    label: text('label').notNull(),
+    /** Lowercased, punctuation-stripped form of `label`. The de-dupe key. */
+    normalized: text('normalized').notNull(),
+    /** search | engagement | calendar | category | ai | manual */
+    source: text('source').notNull(),
+    /** Higher is more worth writing about. Scale is per-source, not absolute. */
+    score: real('score').notNull().default(0),
+    /** Why the scanner thinks this is trending. Shown in the admin UI. */
+    rationale: text('rationale'),
+    categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    /** new | queued | used | dismissed */
+    status: text('status').notNull().default('new'),
+    usedAt: integer('used_at'),
+    dayBucket: text('day_bucket').notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('trend_signals_normalized_uq').on(t.normalized),
+    index('trend_signals_status_idx').on(t.status, t.score),
+    index('trend_signals_source_idx').on(t.source, t.dayBucket),
+  ],
+);
+
+/**
+ * One automation cycle: a cron tick, or an operator pressing "generate now".
+ *
+ * Exists so the generation history in the admin console is a record of *runs*
+ * rather than a flat list of jobs. When six posts appear overnight it matters
+ * whether that was one healthy cycle or four cycles that mostly failed.
+ */
+export const automationRuns = sqliteTable(
+  'automation_runs',
+  {
+    id: text('id').primaryKey(),
+    /** cron | manual | api */
+    trigger: text('trigger').notNull(),
+    /** running | completed | partial | failed | skipped */
+    status: text('status').notNull().default('running'),
+    requested: integer('requested').notNull().default(0),
+    queued: integer('queued').notNull().default(0),
+    succeeded: integer('succeeded').notNull().default(0),
+    failed: integer('failed').notNull().default(0),
+    /** Rejected by the duplicate or quality gate rather than erroring. */
+    skipped: integer('skipped').notNull().default(0),
+    /** Why a run ended early: time budget, daily cap, automation disabled. */
+    stopReason: text('stop_reason'),
+    startedAt: integer('started_at').notNull().default(now),
+    finishedAt: integer('finished_at'),
+    durationMs: integer('duration_ms'),
+    triggeredBy: text('triggered_by').references(() => users.id, { onDelete: 'set null' }),
+    metaJson: text('meta_json'),
+    ...timestamps,
+  },
+  (t) => [
+    index('automation_runs_started_idx').on(t.startedAt),
+    index('automation_runs_status_idx').on(t.status, t.startedAt),
+  ],
+);
+
+/**
+ * The durable content queue — one row per post the system intends to create.
+ *
+ * This is the table that turns the studio from an operator tool into an
+ * automated pipeline. Previously a batch lived entirely in React state, so a
+ * closed tab lost the run and nothing could be retried. A row here survives the
+ * request that created it, records which stage it reached, and carries enough
+ * input to be re-run without a human restating the brief.
+ *
+ * `attempts` and `lastError` are on the item rather than the run because retries
+ * are per item: one prompt hitting a safety filter should not re-run the nine
+ * that already published.
+ */
+export const contentQueue = sqliteTable(
+  'content_queue',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').references(() => automationRuns.id, { onDelete: 'set null' }),
+    trendSignalId: text('trend_signal_id').references(() => trendSignals.id, {
+      onDelete: 'set null',
+    }),
+
+    /* ---- The brief ---- */
+    theme: text('theme').notNull(),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => categories.id, { onDelete: 'restrict' }),
+    aiModel: text('ai_model').notNull(),
+    inputMode: text('input_mode').notNull().default('text-to-image'),
+    isPremium: integer('is_premium', { mode: 'boolean' }).notNull().default(false),
+    /** draft | publish | schedule — what to do once the item passes its gates. */
+    publishMode: text('publish_mode').notNull().default('draft'),
+    scheduledFor: integer('scheduled_for'),
+    skipCover: integer('skip_cover', { mode: 'boolean' }).notNull().default(false),
+
+    /* ---- State machine ---- */
+    /**
+     * queued | generating | generated | quality_check | needs_review |
+     * approved | scheduled | published | failed | cancelled | duplicate
+     */
+    status: text('status').notNull().default('queued'),
+    /** manual | automation | trend — where the item came from. */
+    source: text('source').notNull().default('manual'),
+    /** Higher runs first. Lets an operator jump the queue. */
+    priority: integer('priority').notNull().default(0),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+
+    /* ---- Outcome ---- */
+    promptId: text('prompt_id').references(() => prompts.id, { onDelete: 'set null' }),
+    qualityScore: integer('quality_score'),
+    /** Per-check breakdown from services/studio/quality.ts. */
+    qualityReportJson: text('quality_report_json'),
+    /** Set when the duplicate gate matched an existing prompt. */
+    duplicateOfId: text('duplicate_of_id').references(() => prompts.id, { onDelete: 'set null' }),
+    duplicateScore: real('duplicate_score'),
+    textEngine: text('text_engine'),
+    imageEngine: text('image_engine'),
+    coverError: text('cover_error'),
+    lastError: text('last_error'),
+
+    startedAt: integer('started_at'),
+    finishedAt: integer('finished_at'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [
+    // The claim query: pending items, best priority first, then oldest.
+    index('content_queue_claim_idx').on(t.status, t.priority, t.createdAt),
+    index('content_queue_status_idx').on(t.status, t.createdAt),
+    index('content_queue_run_idx').on(t.runId),
+    index('content_queue_prompt_idx').on(t.promptId),
+    index('content_queue_source_idx').on(t.source, t.createdAt),
+  ],
+);
+
+/**
+ * Structured log for every automation step, including the ones that failed.
+ *
+ * Separate from `admin_logs`, which is an audit trail of what humans did. This
+ * records what the machine did: which provider answered, how long it took, and
+ * the error text when it did not. A failed studio item used to leave no
+ * server-side trace at all, so "it stopped working overnight" was unanswerable.
+ *
+ * `metaJson` must never carry an API key or a raw Authorization header — the
+ * writers in services/automation/logs.ts are responsible for that.
+ */
+export const automationLogs = sqliteTable(
+  'automation_logs',
+  {
+    id: text('id').primaryKey(),
+    /** info | warn | error */
+    level: text('level').notNull().default('info'),
+    /** trend | idea | text | image | quality | duplicate | publish | queue | cron */
+    scope: text('scope').notNull(),
+    message: text('message').notNull(),
+    jobId: text('job_id').references(() => contentQueue.id, { onDelete: 'cascade' }),
+    runId: text('run_id').references(() => automationRuns.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id').references(() => prompts.id, { onDelete: 'set null' }),
+    provider: text('provider'),
+    model: text('model'),
+    durationMs: integer('duration_ms'),
+    metaJson: text('meta_json'),
+    dayBucket: text('day_bucket').notNull(),
+    createdAt: integer('created_at').notNull().default(now),
+  },
+  (t) => [
+    index('automation_logs_created_idx').on(t.createdAt),
+    index('automation_logs_level_idx').on(t.level, t.createdAt),
+    index('automation_logs_scope_idx').on(t.scope, t.createdAt),
+    index('automation_logs_job_idx').on(t.jobId),
+    index('automation_logs_run_idx').on(t.runId),
+  ],
+);
+
 /* ============================ Relations ================================ */
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -923,6 +1113,37 @@ export const articlesRelations = relations(articles, ({ one }) => ({
   category: one(categories, { fields: [articles.categoryId], references: [categories.id] }),
 }));
 
+export const contentQueueRelations = relations(contentQueue, ({ one, many }) => ({
+  run: one(automationRuns, { fields: [contentQueue.runId], references: [automationRuns.id] }),
+  category: one(categories, { fields: [contentQueue.categoryId], references: [categories.id] }),
+  prompt: one(prompts, { fields: [contentQueue.promptId], references: [prompts.id] }),
+  trendSignal: one(trendSignals, {
+    fields: [contentQueue.trendSignalId],
+    references: [trendSignals.id],
+  }),
+  logs: many(automationLogs),
+}));
+
+export const automationRunsRelations = relations(automationRuns, ({ one, many }) => ({
+  triggeredByUser: one(users, {
+    fields: [automationRuns.triggeredBy],
+    references: [users.id],
+  }),
+  items: many(contentQueue),
+  logs: many(automationLogs),
+}));
+
+export const trendSignalsRelations = relations(trendSignals, ({ one, many }) => ({
+  category: one(categories, { fields: [trendSignals.categoryId], references: [categories.id] }),
+  items: many(contentQueue),
+}));
+
+export const automationLogsRelations = relations(automationLogs, ({ one }) => ({
+  job: one(contentQueue, { fields: [automationLogs.jobId], references: [contentQueue.id] }),
+  run: one(automationRuns, { fields: [automationLogs.runId], references: [automationRuns.id] }),
+  prompt: one(prompts, { fields: [automationLogs.promptId], references: [prompts.id] }),
+}));
+
 /* ======================= Inferred model types ========================== */
 
 export type User = typeof users.$inferSelect;
@@ -946,3 +1167,11 @@ export type Article = typeof articles.$inferSelect;
 export type GeneratedPrompt = typeof generatedPrompts.$inferSelect;
 export type Report = typeof reports.$inferSelect;
 export type SiteSetting = typeof siteSettings.$inferSelect;
+export type TrendSignal = typeof trendSignals.$inferSelect;
+export type NewTrendSignal = typeof trendSignals.$inferInsert;
+export type AutomationRun = typeof automationRuns.$inferSelect;
+export type NewAutomationRun = typeof automationRuns.$inferInsert;
+export type ContentQueueItem = typeof contentQueue.$inferSelect;
+export type NewContentQueueItem = typeof contentQueue.$inferInsert;
+export type AutomationLog = typeof automationLogs.$inferSelect;
+export type NewAutomationLog = typeof automationLogs.$inferInsert;

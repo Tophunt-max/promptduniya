@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import {
   ArticlesIcon,
+  AutomationIcon,
   BillingIcon,
   CategoriesIcon,
   CloseIcon,
@@ -52,6 +53,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Content',
     items: [
+      { to: '/automation', label: 'Automation', icon: AutomationIcon },
       { to: '/studio', label: 'AI Studio', icon: SparkleIcon },
       { to: '/prompts', label: 'Prompts', icon: PromptsIcon },
       { to: '/categories', label: 'Categories', icon: CategoriesIcon },

@@ -168,11 +168,72 @@ GET    /v1/admin/stats · /stats/series · /logs
 GET    /v1/admin/subscriptions · payments · payments/events
 POST   /v1/admin/upload                   GET /v1/admin/upload/config
 GET    /v1/admin/settings                 PUT /v1/admin/settings
+GET    /v1/admin/studio/status            POST /v1/admin/studio/draft · studio/run
+
+# AI content automation  (editor; config is admin-only)
+GET    /v1/admin/automation/overview      GET/PUT /v1/admin/automation/config
+GET    /v1/admin/automation/queue · queue/counts
+POST   /v1/admin/automation/queue         POST .../queue/:id/retry · cancel · approve
+POST   /v1/admin/automation/process       GET /v1/admin/automation/runs
+GET    /v1/admin/automation/trends        POST .../trends · trends/discover · trends/:id/dismiss
+POST   /v1/admin/automation/ideas         GET /v1/admin/automation/logs
 
 # Machine
 POST   /v1/webhooks/razorpay   (HMAC-verified, idempotent, no CORS/auth)
-POST   /v1/cron/maintenance    (x-cron-secret; also runs on the cron trigger)
+POST   /v1/cron/maintenance    (x-cron-secret; also runs on the nightly trigger)
+POST   /v1/cron/hourly         (x-cron-secret; also runs on the hourly trigger)
 ```
+
+## AI content automation
+
+The catalogue can fill itself. A pipeline discovers what to write about, writes it,
+illustrates it, scores it, and publishes what passes — on a schedule, with no
+operator in the loop:
+
+```
+trend discovery → idea generation → prompt written → duplicate gate
+   → saved as draft → cover image → quality score → publish / schedule / hold
+```
+
+Everything is configured from **Admin → Automation**, not from environment
+variables, so the posting rate and the quality bar change without a redeploy.
+
+- **Trend discovery** mines four signals in ascending order of cost: the site's own
+  search log (searches that returned little — literal unmet demand), copy-to-view
+  ratios per category, an Indian festival calendar with lead times, and thin
+  categories. A language model then expands the strongest of those into concrete,
+  shootable themes. Signals are de-duplicated on a unique normalised key and
+  marked used, so a rescan does not re-suggest what the catalogue already covers.
+- **The content queue** (`content_queue`) is durable. Each row carries the full
+  brief, the stage it reached and its attempt count, so a run survives a closed
+  tab, a provider outage and a redeploy — and any item can be retried without
+  restating the brief. Claiming is compare-and-swap, so a manual "generate now"
+  cannot double-process an item the cron tick is already working on.
+- **The quality gate** scores every draft 0–100 against the house style —
+  lighting, camera, wardrobe, environment, explicit adult age, prose rather than
+  weight syntax, SEO completeness, image present. Scoring is deterministic and
+  dependency-free: grading a model with another model would double the cost and
+  fail exactly when a quota is exhausted. Safety failures (minors, explicit
+  content, a photo-edit prompt that forgets the uploaded face) are *blocking* and
+  zero the score outright. Anything below the configured threshold is saved as a
+  draft and held for review rather than discarded.
+- **Duplicate detection** compares titles by token-set overlap and bodies by
+  word-shingle overlap, against a candidate set narrowed in SQL via the existing
+  `prompts.search_text` index. This is what stops the catalogue slowly filling
+  with near-copies of its own most popular post, which also harms search.
+- **Scheduling.** Cloudflare cron expressions are fixed at deploy time, so the
+  Worker ticks hourly and the `automation.publish_hours` setting decides which
+  ticks generate. A run stops on whichever comes first of `max_per_run` items or
+  `run_budget_seconds`, so a tick cannot overrun its invocation.
+- **Observability.** `automation_logs` records what the machine did — provider,
+  latency, and the error text when it failed — kept separate from `admin_logs`,
+  which records what people did. Credentials are stripped before anything is
+  written. `automation_runs` records one row per cycle, so six posts appearing
+  overnight can be told apart from four cycles that mostly failed.
+
+Defaults are deliberately safe: automation ships **disabled**, with
+`publish_mode: draft` and `auto_publish: false`, so installing it cannot publish
+machine-written posts before anyone has read one.
 
 ## Verification status
 
