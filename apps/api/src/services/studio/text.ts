@@ -203,9 +203,16 @@ export class GeminiTextEngine implements TextEngine {
             // cost nothing, whereas a truncated JSON reply costs the whole call.
             maxOutputTokens: (input.maxTokens ?? 2000) + GEMINI_THINKING_HEADROOM,
             responseMimeType: 'application/json',
-            // Honoured by the models that support it, ignored by the ones that
-            // do not. Where it applies the headroom above simply goes unused.
-            thinkingConfig: { thinkingBudget: 0 },
+            // No `thinkingConfig` here, deliberately.
+            //
+            // Asking for `thinkingBudget: 0` does cut latency roughly fourfold
+            // where it is accepted, but `gemini-3.6-flash` rejects the whole
+            // request with a bare 400 INVALID_ARGUMENT — Google moved this
+            // control between model generations and the older spelling is no
+            // longer valid. Trading a working pipeline for a faster one is not a
+            // trade worth making on a cron-driven job, and the headroom above is
+            // what actually fixed the truncated replies: with it and no
+            // thinkingConfig, trend expansion returns a full set of themes.
           },
         }),
         signal: AbortSignal.timeout(45_000),

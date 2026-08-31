@@ -312,9 +312,15 @@ export class WorkersAiEngine implements ImageEngine {
       // exhausted quota read identically, and only one of those is worth waiting
       // out.
       if (/neuron/i.test(message)) {
+        // The allocation is account-wide, not per model: partner models such as
+        // Lucid Origin are billed per image *and* metered against it, so
+        // switching model does not buy a way round this. Documented to reset at
+        // 00:00 UTC, though it has been observed staying exhausted past that, so
+        // the dashboard is the only reliable answer on remaining usage.
         throw AppError.badRequest(
-          `Workers AI refused the request for ${this.model}: the daily free allocation (10,000 Neurons) looks exhausted — it resets at 00:00 UTC. ` +
-            `Partner models are billed separately and may still work. Provider detail: ${message}`,
+          `Workers AI refused the request for ${this.model}: the account's daily free allocation of 10,000 Neurons is exhausted. ` +
+            `It covers every Workers AI model including the partner ones, so no other model will work either — use Gemini, or move the account to the Workers Paid plan. ` +
+            `Provider detail: ${message}`,
         );
       }
       throw AppError.badRequest(`Workers AI failed for ${this.model}: ${message}`);

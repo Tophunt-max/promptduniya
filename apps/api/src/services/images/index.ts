@@ -40,7 +40,23 @@ class ResilientImageEngine implements ImageEngine {
       if (!this.secondary) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[images] ${this.primary.name} failed, trying ${this.secondary.name}:`, reason);
-      const result = await this.secondary.generate(request);
+
+      let result: GeneratedImage;
+      try {
+        result = await this.secondary.generate(request);
+      } catch (fallbackError) {
+        // Both providers are down. Throwing only the second error names the
+        // wrong provider: with Workers AI selected and Gemini behind it, an
+        // operator was told Gemini had refused a request they never made of it,
+        // and the actual failure of the model they had chosen was only ever
+        // written to console.warn.
+        const fallbackReason =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        throw AppError.badRequest(
+          `Both image providers failed. ${this.primary.name}: ${reason} — then ${this.secondary.name}: ${fallbackReason}`,
+        );
+      }
+
       return {
         ...result,
         engine: `${this.primary.name}-fallback:${result.engine}`,
