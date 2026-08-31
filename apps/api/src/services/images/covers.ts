@@ -148,15 +148,51 @@ const QUALITY_CLAUSE =
   'True-to-life colour, natural complexion, fine photographic detail, sharp focus on the eyes. ' +
   'Unretouched documentary finish, no digital gloss.';
 
+/**
+ * The realism floor, safe to append to a prompt that specifies its own optics.
+ *
+ * Everything in `QUALITY_CLAUSE` that could contradict a body's camera block —
+ * the focal length, the finish, the grade — is left out. What remains is the part
+ * that has to be said either way, because it is what separates a photograph from
+ * the rendered, retouched look these models drift towards unless told otherwise:
+ * anatomy that behaves, surfaces that have texture, and light that obeys physics.
+ *
+ * Worded as things to render rather than things to avoid. The obvious phrasing —
+ * "visible pores, no skin smoothing" — reads as a photography note to a human but
+ * trips Workers AI's safety classifier, which scores the raw string and sees
+ * repeated body-texture vocabulary; an ordinary Diwali portrait came back as
+ * "8007: Input prompt contains NSFW content" because of it.
+ */
+const REALISM_FLOOR =
+  'Render as authentic professional photography: correct human anatomy and hand structure, ' +
+  'true-to-life Indian complexion with natural tonal variation, fabric that drapes under its own weight, ' +
+  'physically accurate light and shadow, detailed environmental surfaces, natural dynamic range, ' +
+  'and the subtle imperfections of a real exposure. Not a render, not an illustration, not retouched.';
+
 const BASE_NEGATIVE =
-  'text, watermark, logo, signature, distorted face, extra fingers, extra limbs, ' +
-  'plastic skin, waxy skin, beauty filter, cartoon, anime, 3D render, CGI, ' +
+  'text, watermark, logo, signature, readable signage, ' +
+  'distorted face, altered facial proportions, artificial symmetry, ' +
+  'distorted hands, extra fingers, missing fingers, malformed limbs, unnatural anatomy, ' +
+  'plastic skin, waxy skin, doll skin, over-smoothed skin, beauty filter, ' +
+  'cartoon, anime, 3D render, CGI, illustration, painting, ' +
+  'excessive HDR, oversaturated colour, blown highlights, ' +
   'blurry, low resolution, duplicate people, western features';
 
 interface PromptRow {
   slug: string;
   title: string;
   shortDescription: string;
+  /**
+   * The prompt itself — the 300-to-500-word body a reader copies.
+   *
+   * The cover exists to show what this produces, so this is the instruction to
+   * send. It was previously ignored in favour of a summary rebuilt from the
+   * columns below, which is why covers never resembled the prompt they
+   * illustrated: the body names the pose, the wardrobe, the surfaces, the light
+   * direction and the grade, and none of that survived being compressed into one
+   * sentence of `shortDescription` plus five one-word fields.
+   */
+  promptText: string | null;
   negativePrompt: string | null;
   inputMode: string;
   style: string | null;
@@ -169,16 +205,63 @@ interface PromptRow {
   mood: string | null;
 }
 
+/** Paragraphs that only make sense when a photograph has actually been supplied. */
+const IDENTITY_PARAGRAPH =
+  /\b(uploaded|supplied|attached|reference)\s+(photo|photograph|image|picture)\b/i;
+
 /**
- * Builds a compact scene instruction from the prompt's structured columns.
+ * Rewrites a photo-edit body for an engine that cannot accept a face.
  *
- * `withReference` changes the opening clause only: when a house model is being
- * supplied the model is told to keep that face, otherwise it is told to invent
- * one. The rest of the scene description is identical either way, which is what
- * keeps a Gemini cover and a flux cover of the same prompt comparable.
+ * A photo-edit prompt opens by instructing the model to treat an upload as the
+ * exact facial identity. With no upload that paragraph is not merely useless —
+ * it is an instruction to copy something that is not there, and models respond
+ * by inventing a face and then holding it rigid. Dropping it and stating the
+ * subject plainly gives a cleaner result.
+ */
+function withoutIdentityBlock(body: string, subject: string): string {
+  const kept = body
+    .split(/\n\s*\n/)
+    .filter((paragraph) => !IDENTITY_PARAGRAPH.test(paragraph))
+    .join('\n\n')
+    .trim();
+
+  const scene = kept || body;
+  return `Photograph of ${subject}.\n\n${scene}`;
+}
+
+/**
+ * The instruction for a cover: the prompt's own body, near enough verbatim.
+ *
+ * A cover's entire job is to show a reader what the prompt produces, so the
+ * honest instruction is the prompt. This used to compose a summary from the
+ * structured columns instead — title, one sentence of description, and five
+ * one-word fields — which is a different photograph by construction. The body
+ * carries the pose, the hand positions, the named fabrics, the surfaces, the
+ * light direction and the colour grade; the summary carried none of it.
+ *
+ * `QUALITY_CLAUSE` is deliberately *not* appended in that case. It specifies an
+ * 85mm lens, and the bodies specify their own optics — "50mm equivalent at
+ * f/2.2" in one, "35mm, f/2.8" in another. Two focal lengths in one instruction
+ * is a contradiction the model resolves arbitrarily.
+ *
+ * Rows with no body yet still fall back to the column summary, so a
+ * half-finished draft can still get a cover.
  */
 export function buildCoverInstruction(prompt: PromptRow, withReference: boolean): string {
   const subject = subjectPhrase(prompt.gender, prompt.ageGroup, prompt.slug);
+  const body = (prompt.promptText ?? '').trim();
+
+  if (body.length >= 200) {
+    const scene =
+      withReference || !IDENTITY_PARAGRAPH.test(body)
+        ? body
+        : withoutIdentityBlock(body, subject);
+
+    // Only the parts of the realism floor that cannot contradict the body: no
+    // lens, no aperture, no grade.
+    return [scene, REALISM_FLOOR, framingClause(prompt)].join('\n\n');
+  }
+
   const lines: string[] = [];
 
   if (withReference && prompt.inputMode === 'photo-edit') {
@@ -200,15 +283,21 @@ export function buildCoverInstruction(prompt: PromptRow, withReference: boolean)
   if (scene.length) lines.push(scene.join(' '));
 
   lines.push(QUALITY_CLAUSE);
-  // The subject is restated at the end because it is the one detail that must
-  // not drift, and diffusion models weight the tail of a prompt heavily too.
-  lines.push(
-    prompt.gender === 'non-human'
-      ? 'Clean frame, no people.'
-      : `Clearly an adult. Waist-up framing, single subject, clean frame.`,
-  );
+  lines.push(framingClause(prompt));
 
   return lines.join('\n\n');
+}
+
+/**
+ * Restated last because the tail of a prompt is weighted heavily, and the frame
+ * shape is the one thing a cover cannot get wrong: the card that displays it is
+ * a fixed portrait, so a square or landscape render is cropped on arrival.
+ */
+function framingClause(prompt: PromptRow): string {
+  if (prompt.gender === 'non-human') {
+    return `Clean frame, no people. Vertical ${prompt.aspectRatio ?? '4:5'} composition.`;
+  }
+  return `Single adult subject, clean frame, vertical ${prompt.aspectRatio ?? '4:5'} composition.`;
 }
 
 function buildNegative(prompt: PromptRow): string {

@@ -31,6 +31,36 @@ const DEFAULT_MODEL = '@cf/leonardo/lucid-origin';
 /** The tightest prompt cap across the supported models. */
 const MAX_PROMPT_CHARS = 2000;
 
+/**
+ * Trims an over-long instruction back to a sentence boundary.
+ *
+ * A hard `slice` cuts mid-word, and what it cuts is the tail — where the framing,
+ * the aspect ratio and the subject restatement live, all of which these models
+ * weight heavily. Losing "vertical 4:5 composition" to a character count is how a
+ * correctly written prompt still produces a wrongly cropped cover.
+ *
+ * Exported for tests: the boundary behaviour is the point, not the limit.
+ */
+export function clampPrompt(instruction: string, limit = MAX_PROMPT_CHARS): string {
+  const text = instruction.trim();
+  if (text.length <= limit) return text;
+
+  const head = text.slice(0, limit);
+  // Prefer a paragraph break, then a sentence end, and only fall back to a hard
+  // cut if neither leaves a usable majority of the budget. The sentence case
+  // keeps its full stop — cutting at the index of the '.' drops it and leaves the
+  // instruction ending mid-thought, which is the thing this exists to avoid.
+  const floor = limit * 0.6;
+
+  const paragraph = head.lastIndexOf('\n\n');
+  if (paragraph > floor) return head.slice(0, paragraph).trim();
+
+  const sentence = head.lastIndexOf('. ');
+  if (sentence > floor) return head.slice(0, sentence + 1).trim();
+
+  return head.trim();
+}
+
 interface ModelProfile {
   /** JSON body, or multipart form data as the FLUX.2 family requires. */
   transport: 'json' | 'multipart';
@@ -295,7 +325,7 @@ export class WorkersAiEngine implements ImageEngine {
     }
 
     const profile = this.profile;
-    const prompt = request.instruction.slice(0, MAX_PROMPT_CHARS);
+    const prompt = clampPrompt(request.instruction);
     const useReference = Boolean(request.reference) && profile.reference;
 
     let response: unknown;

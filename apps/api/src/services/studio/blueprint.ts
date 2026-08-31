@@ -69,10 +69,22 @@ Respond with a single JSON object and nothing else. No markdown fence, no commen
 
 Rules for the prompt body:
 - Write flowing prose in paragraphs. Never use weight syntax like (term:1.2) and never use CLI flags like --ar.
-- Cover, in this order: subject and pose, wardrobe with named fabrics, environment and surfaces, texture, lighting with direction and colour temperature, then camera and colour grade.
+- Cover, in this order, as labelled blocks: subject and pose; wardrobe with named fabrics and jewellery; hair and makeup; environment and surfaces; texture; lighting with direction and colour temperature; camera and exposure; colour palette; framing constraints.
 - Name a specific adult age, for example "a 31-year-old Indian woman".
-- 220 to 400 words.
+- 300 to 450 words.
 - Never name a real person, a celebrity, or a trademarked brand.
+
+What separates a usable prompt from a vague one — every block has to be specific enough to act on:
+- Pose: say which way the body is turned, where the gaze goes, and what each hand is doing. "Looking at the camera" is not a pose.
+- Composition: say where the subject sits in the frame and what occupies the rest of it. Name the thirds if it helps — "the water fills the left third, the baskets line the right".
+- Wardrobe: name the fabric, the colour, the drape and each piece of jewellery separately, including which side an asymmetric piece sits on.
+- Hair and makeup: part, length, how it falls or moves, and the makeup register. State what to avoid if a look is easily overdone.
+- Exposure: focal length, aperture and ISO, then what is sharp and what is not.
+- Colour palette: name two or three colours that carry the image, and name the casts to stay away from — a palette stated only positively drifts teal and orange.
+- Texture: ask for real skin, real fabric weave, real surfaces. Say it as things to render, never as a list of things to avoid — safety classifiers score the raw string and a list of body-texture words gets an ordinary portrait rejected.
+
+Rules for negativePrompt:
+- 30 to 60 comma-separated items, ordered: identity drift, then anatomy, then skin and retouching, then medium (cartoon, 3D, illustration), then exposure faults, then unwanted objects and people, then text and watermarks, then anything specific to this scene that would ruin it.
 
 If the input mode is photo-edit, the prompt must open by instructing the model to treat an uploaded photograph as the exact facial identity and to preserve it without beautifying or reshaping it. If the input mode is text-to-image, the prompt invents the subject entirely and must not mention uploading anything.`;
 
